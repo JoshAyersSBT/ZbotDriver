@@ -9,6 +9,126 @@ except ImportError:
     vl53l0x = None
 
 
+COLOR_PALETTE_32 = (
+    ("black", (0, 0, 0), 70),
+    ("white", (255, 255, 255), 70),
+    ("silver", (192, 192, 192), 70),
+    ("gray", (128, 128, 128), 70),
+    ("red", (255, 0, 0), 90),
+    ("maroon", (128, 0, 0), 90),
+    ("orange", (255, 128, 0), 80),
+    ("coral", (255, 127, 80), 80),
+    ("salmon", (250, 128, 114), 80),
+    ("brown", (150, 75, 0), 85),
+    ("tan", (210, 180, 140), 75),
+    ("yellow", (255, 255, 0), 80),
+    ("gold", (255, 215, 0), 75),
+    ("olive", (128, 128, 0), 85),
+    ("lime", (191, 255, 0), 80),
+    ("chartreuse", (128, 255, 0), 80),
+    ("green", (0, 170, 0), 90),
+    ("spring_green", (0, 255, 128), 80),
+    ("cyan", (0, 255, 255), 80),
+    ("turquoise", (64, 224, 208), 75),
+    ("teal", (0, 128, 128), 85),
+    ("azure", (0, 128, 255), 80),
+    ("sky_blue", (135, 206, 235), 75),
+    ("blue", (0, 0, 255), 90),
+    ("navy", (0, 0, 128), 90),
+    ("indigo", (75, 0, 130), 85),
+    ("purple", (128, 0, 128), 85),
+    ("violet", (148, 0, 211), 85),
+    ("lavender", (180, 160, 255), 75),
+    ("magenta", (255, 0, 255), 85),
+    ("pink", (255, 128, 192), 80),
+    ("rose", (255, 0, 128), 85),
+)
+
+
+def _palette_ranges():
+    ranges = {}
+    for name, center, tolerance in COLOR_PALETTE_32:
+        ranges[name] = {
+            "center": center,
+            "min": tuple(max(0, c - tolerance) for c in center),
+            "max": tuple(min(255, c + tolerance) for c in center),
+            "tolerance": tolerance,
+        }
+    return ranges
+
+
+COLOR_RANGES_32 = _palette_ranges()
+
+
+def classify_rgb_color(r, g, b, clear=None):
+    total = int(r) + int(g) + int(b)
+    if total <= 0:
+        return {
+            "name": "unknown",
+            "confidence": 0,
+            "normalized": {"r": 0, "g": 0, "b": 0},
+            "range": None,
+        }
+
+    rn = int(int(r) * 255 / total)
+    gn = int(int(g) * 255 / total)
+    bn = int(int(b) * 255 / total)
+    sample = (rn, gn, bn)
+
+    if max(sample) - min(sample) <= 20:
+        if total < 100:
+            neutral_name = "black"
+        elif total < 500:
+            neutral_name = "gray"
+        elif total < 1200:
+            neutral_name = "silver"
+        else:
+            neutral_name = "white"
+
+        return {
+            "name": neutral_name,
+            "confidence": 100,
+            "normalized": {"r": rn, "g": gn, "b": bn},
+            "range": COLOR_RANGES_32.get(neutral_name),
+        }
+
+    best_name = "unknown"
+    best_range = None
+    best_distance = None
+    best_tolerance = 1
+
+    for name, center, tolerance in COLOR_PALETTE_32:
+        center_total = center[0] + center[1] + center[2]
+        if center_total <= 0:
+            center_sample = (85, 85, 85)
+        else:
+            center_sample = (
+                int(center[0] * 255 / center_total),
+                int(center[1] * 255 / center_total),
+                int(center[2] * 255 / center_total),
+            )
+
+        distance = (
+            abs(sample[0] - center_sample[0]) +
+            abs(sample[1] - center_sample[1]) +
+            abs(sample[2] - center_sample[2])
+        )
+
+        if best_distance is None or distance < best_distance:
+            best_name = name
+            best_range = COLOR_RANGES_32.get(name)
+            best_distance = distance
+            best_tolerance = tolerance
+
+    confidence = max(0, 100 - int(best_distance * 100 / max(1, best_tolerance)))
+    return {
+        "name": best_name,
+        "confidence": confidence,
+        "normalized": {"r": rn, "g": gn, "b": bn},
+        "range": best_range,
+    }
+
+
 class TCS3472:
     ADDR = 0x29
     CMD = 0x80
@@ -108,16 +228,22 @@ class SensorHub:
             elif kind == "TCS3472":
                 if isinstance(value, tuple) and len(value) == 4:
                     r, g, b, clear = value
+                    match = classify_rgb_color(r, g, b, clear)
                     out["color_port_{}".format(port)] = {
                         "value": {
                             "r": int(r),
                             "g": int(g),
                             "b": int(b),
                             "clear": int(clear),
+                            "color": match["name"],
+                            "confidence": match["confidence"],
+                            "normalized": match["normalized"],
                         },
                         "meta": {
                             "kind": kind,
                             "port": port,
+                            "palette": "COLOR_PALETTE_32",
+                            "range": match["range"],
                         },
                     }
 

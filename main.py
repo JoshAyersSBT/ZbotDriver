@@ -574,8 +574,90 @@ class _ZBotSensor:
 
         return None
 
+    def _find_color_item(self):
+        if self.api is None:
+            return None
+
+        sensors = self.api.get_sensor_snapshot()
+        candidates = (
+            "color_port_{}".format(self.port),
+            "port{}_color".format(self.port),
+        )
+
+        for key in candidates:
+            item = sensors.get(key)
+            if isinstance(item, dict) and isinstance(item.get("value"), dict):
+                return item
+
+        for key, item in sensors.items():
+            if not isinstance(item, dict):
+                continue
+
+            value = item.get("value")
+            if not isinstance(value, dict):
+                continue
+
+            meta = item.get("meta", {})
+            key_s = str(key).lower()
+            meta_s = str(meta).lower()
+
+            if "color" in key_s and str(self.port) in key_s:
+                return item
+
+            if "color" in meta_s and str(self.port) in meta_s:
+                return item
+
+        return None
+
     def read(self):
         return self._find_snapshot_value()
+
+    def rgb(self):
+        item = self._find_color_item()
+        if item is None:
+            return None
+
+        value = item.get("value", {})
+        if not all(k in value for k in ("r", "g", "b")):
+            return None
+
+        return {
+            "r": int(value.get("r", 0)),
+            "g": int(value.get("g", 0)),
+            "b": int(value.get("b", 0)),
+            "clear": int(value.get("clear", 0)),
+        }
+
+    def color(self):
+        item = self._find_color_item()
+        if item is None:
+            return None
+
+        value = item.get("value", {})
+        color = value.get("color")
+        if color is None:
+            return None
+        return str(color)
+
+    def color_match(self):
+        item = self._find_color_item()
+        if item is None:
+            return None
+
+        value = item.get("value", {})
+        return {
+            "color": value.get("color"),
+            "confidence": int(value.get("confidence", 0)),
+            "rgb": self.rgb(),
+            "normalized": value.get("normalized"),
+            "range": item.get("meta", {}).get("range"),
+        }
+
+    def is_color(self, name):
+        color = self.color()
+        if color is None:
+            return False
+        return color.lower() == str(name).lower()
 
 
 class _ZBotServo:
@@ -743,6 +825,14 @@ class ZBot:
         s = self.sensor(port)
         return s.read()
 
+    def color(self, port):
+        s = self.sensor(port)
+        return s.color()
+
+    def rgb(self, port):
+        s = self.sensor(port)
+        return s.rgb()
+
     def status(self):
         if self.api is None:
             return {}
@@ -885,6 +975,9 @@ def _sensor_port_line(api, port):
 
         if isinstance(value, dict):
             if "r" in value and "g" in value and "b" in value:
+                color = value.get("color")
+                if color:
+                    return "P{} {}".format(port, str(color)[:10])
                 return "P{} RGB".format(port)
 
         if isinstance(value, (int, float)):
@@ -1429,14 +1522,18 @@ async def main():
     else:
         info("BOOT: IMU task skipped (no IMU)")
         state("TASK", "imu_skipped")
+    ENABLE_ACTIVE_MOTOR_SCAN = False
 
     if motor_scanner is not None:
-        try:
-            api.register_task("motor_scan", asyncio.create_task(motor_scanner.task()))
-            info("BOOT: MotorScanner task started")
-            state("TASK", "motor_scan_started")
-        except Exception as e:
-            error("MOTOR_SCAN_TASK", e)
+        if ENABLE_ACTIVE_MOTOR_SCAN:
+            try:
+                api.register_task("motor_scan", asyncio.create_task(motor_scanner.task()))
+                info("BOOT: MotorScanner task started")
+                state("TASK", "motor_scan_started")
+            except Exception as e:
+                error("MOTOR_SCAN_TASK", e)
+        else:
+            warn("BOOT: active motor scan disabled during user runtime")
 
         try:
             api.register_task(

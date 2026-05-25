@@ -98,33 +98,30 @@ RIGHT_ENC = MOTOR_PORT_MAP[RIGHT_PORT]["enc"]
 # SERVO CONFIG
 # ============================================================
 
-# Shared servo timing defaults.
 SERVO_FREQ_HZ = 50
 SERVO_MIN_US = 500
 SERVO_MAX_US = 2500
 SERVO_CENTER_DEG = 90
 
-# Steering is a ROLE bound to a port, not a dedicated pin.
-STEER_SERVO_PORT = 1
-
-# Backward-compatible servo map for generic servo registration.
+# Motor ports and servo ports are the same physical actuator ports.
+# This is a hardware capability map, not a user robot layout.
 SERVO_PORT_MAP = {
     port: {
         "name": "{}_SERVO".format(cfg["name"]),
-        "gpio": cfg["pins"]["pwm"],
+        "gpio": cfg["pwm"],
         "freq_hz": SERVO_FREQ_HZ,
         "min_us": SERVO_MIN_US,
         "max_us": SERVO_MAX_US,
         "center_deg": SERVO_CENTER_DEG,
-        "role": "steering" if port == STEER_SERVO_PORT else "",
+        "role": "",
     }
-    for port, cfg in PORT_MAP.items()
+    for port, cfg in MOTOR_PORT_MAP.items()
 }
 
-# Legacy compatibility only.
-# Do not use this for new code. It points to the steering port PWM pin.
+# Legacy fallback only.
+# User code should call zbot.servo(port) directly.
+STEER_SERVO_PORT = 1
 STEER_SERVO_GPIO = SERVO_PORT_MAP[STEER_SERVO_PORT]["gpio"]
-
 
 # ============================================================
 # BLE
@@ -211,4 +208,4 @@ MOTOR_FEEDBACK_PERIOD_MS = 200
 
 BUTTON0_IO  = 15
 BUTTON0_IO  = 12
-PULLDOWN = TRUE
+PULLDOWN = True
