@@ -185,7 +185,13 @@ class RobotAPI:
             "sensors": {},
             "buttons": {},
             "services": {},
-            "user": {"running": False, "last_error": None},
+            "user": {
+                "running": False,
+                "last_error": None,
+                "kind": None,
+                "module": None,
+                "file": None,
+            },
         }
         self.handles = {}
         self.tasks = {}
@@ -1125,7 +1131,34 @@ async def _boot_complete_message(api):
     await asyncio.sleep_ms(1200)
 
 
+def _detect_user_main_kind(user_main, user_fn):
+    try:
+        override = getattr(user_main, "USER_MAIN_KIND", None)
+        if override is not None:
+            kind = str(override).strip().lower()
+            if kind in ("c", "native", "python"):
+                return "c" if kind == "native" else kind
+    except Exception:
+        pass
+
+    try:
+        module_file = getattr(user_main, "__file__", None)
+        if module_file:
+            return "python"
+    except Exception:
+        pass
+
+    try:
+        if getattr(user_fn, "__code__", None) is not None:
+            return "python"
+    except Exception:
+        pass
+
+    return "c"
+
+
 async def _run_user_program(api):
+    user_main_name = "user_main"
     try:
         import user_main
     except Exception as e:
@@ -1140,7 +1173,23 @@ async def _run_user_program(api):
                 pass
         return
 
+    try:
+        user_main_name = getattr(user_main, "__name__", "user_main")
+    except Exception:
+        user_main_name = "user_main"
+
     user_fn = getattr(user_main, "main", None)
+    user_file = None
+    try:
+        user_file = getattr(user_main, "__file__", None)
+    except Exception:
+        user_file = None
+
+    user_kind = _detect_user_main_kind(user_main, user_fn) if user_fn is not None else "unknown"
+    api.status["user"]["kind"] = user_kind
+    api.status["user"]["module"] = user_main_name
+    api.status["user"]["file"] = user_file
+
     if user_fn is None:
         warn("USER: user_main.main missing")
         api.status["user"]["last_error"] = "user_main.main missing"
@@ -1159,21 +1208,34 @@ async def _run_user_program(api):
     teleop = api.get_handle("teleop")
     if teleop is not None:
         try:
-            teleop.notify_line("INFO USER main starting")
+            teleop.notify_line("INFO USER {} {}.main starting".format(user_kind, user_main_name))
         except Exception:
             pass
 
     try:
-        argc = None
+        result = None
+        called = False
+
         try:
             argc = user_fn.__code__.co_argcount
         except Exception:
-            pass
+            argc = None
 
         if argc == 0:
-            await user_fn()
-        else:
-            await user_fn(zbot)
+            result = user_fn()
+            called = True
+        elif argc is not None:
+            result = user_fn(zbot)
+            called = True
+
+        if not called:
+            try:
+                result = user_fn(zbot)
+            except TypeError:
+                result = user_fn()
+
+        if hasattr(result, "__await__"):
+            await result
 
     except Exception as e:
         api.status["user"]["last_error"] = repr(e)

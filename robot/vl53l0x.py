@@ -13,8 +13,55 @@
 
 import time
 
+try:
+    from zbot_vl53l0x import VL53L0X as _NativeVL53L0X
+except ImportError:
+    _NativeVL53L0X = None
 
-class VL53L0X:
+
+if _NativeVL53L0X is not None:
+    class VL53L0X:
+        DEFAULT_ADDR = 0x29
+
+        def __init__(self, i2c, address=DEFAULT_ADDR, io_timeout=500):
+            self._native = _NativeVL53L0X(i2c, address=address, io_timeout=io_timeout)
+
+        def init(self, io_2v8=True):
+            return self._native.init(io_2v8)
+
+        def start_continuous(self, period_ms=0):
+            return self._native.start_continuous(period_ms)
+
+        def stop_continuous(self):
+            return self._native.stop_continuous()
+
+        def read_range_continuous_mm(self):
+            return self._native.read_range_continuous_mm()
+
+        def read_range_single_mm(self):
+            return self._native.read_range_single_mm()
+
+        def start(self):
+            return self.start_continuous()
+
+        def stop(self):
+            return self.stop_continuous()
+
+        def read(self):
+            return self.read_range_continuous_mm()
+
+        def ping(self):
+            return self.read_range_continuous_mm()
+
+        @property
+        def distance(self):
+            return self.read_range_continuous_mm()
+
+        def read_debug(self):
+            return self._native.read_debug()
+
+else:
+ class VL53L0X:
     DEFAULT_ADDR = 0x29
 
     # Registers

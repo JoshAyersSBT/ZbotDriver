@@ -1,8 +1,60 @@
 # robot/vl53l1x.py
 import time
 
+try:
+    from zbot_vl53l1x import VL53L1X as _NativeVL53L1X
+except ImportError:
+    _NativeVL53L1X = None
 
-class VL53L1X:
+
+if _NativeVL53L1X is not None:
+    class VL53L1X:
+        DEFAULT_ADDR = 0x29
+
+        def __init__(self, i2c, address=DEFAULT_ADDR):
+            self._native = _NativeVL53L1X(i2c, address=address)
+
+        def start(self):
+            return self._native.start()
+
+        def stop(self):
+            return self._native.stop()
+
+        def clear_interrupt(self):
+            return self._native.clear_interrupt()
+
+        def data_ready(self):
+            return self._native.data_ready()
+
+        def read_raw_block(self):
+            return self._native.read_raw_block()
+
+        def read_debug(self, timeout_ms=200):
+            return self._native.read_debug(timeout_ms)
+
+        def read(self, timeout_ms=200):
+            return self._native.read(timeout_ms)
+
+        @property
+        def distance(self):
+            return self.read()
+
+        def ping(self):
+            return self.read()
+
+        def info(self):
+            return self._native.info()
+
+        @property
+        def address(self):
+            return self.info()["address"]
+
+        @property
+        def model_id(self):
+            return self.info()["model_id"]
+
+else:
+ class VL53L1X:
     DEFAULT_ADDR = 0x29
 
     _REG_SOFT_RESET = 0x0000
@@ -123,7 +175,7 @@ class VL53L1X:
 
     def read(self, timeout_ms=200):
         sample = self.read_debug(timeout_ms=timeout_ms)
-        dist = sample["distance"]
+        dist = sample["cand_96"]
 
         # Reject clearly bogus/stale values.
         if dist <= 0 or dist >= 4000 or dist == 5633 or dist == 65535:

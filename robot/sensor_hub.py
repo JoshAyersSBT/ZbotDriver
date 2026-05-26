@@ -8,6 +8,11 @@ try:
 except ImportError:
     vl53l0x = None
 
+try:
+    from zbot_tcs3472 import TCS3472 as _NativeTCS3472
+except ImportError:
+    _NativeTCS3472 = None
+
 
 COLOR_PALETTE_32 = (
     ("black", (0, 0, 0), 70),
@@ -129,7 +134,7 @@ def classify_rgb_color(r, g, b, clear=None):
     }
 
 
-class TCS3472:
+class _PyTCS3472:
     ADDR = 0x29
     CMD = 0x80
     ENABLE = 0x00
@@ -164,6 +169,9 @@ class TCS3472:
         g = data[4] | (data[5] << 8)
         b = data[6] | (data[7] << 8)
         return {"clear": c, "r": r, "g": g, "b": b}
+
+
+TCS3472 = _NativeTCS3472 or _PyTCS3472
 
 
 class SensorHub:

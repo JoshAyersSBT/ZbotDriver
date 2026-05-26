@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+try:
+    import zbot_drive
+except ImportError:
+    zbot_drive = None
+
 
 def _clamp(x: int | float, lo: int | float, hi: int | float):
+    if zbot_drive is not None and lo == -100 and hi == 100:
+        return zbot_drive.clamp(int(x))
     return lo if x < lo else hi if x > hi else x
 
 
@@ -68,8 +75,11 @@ class DifferentialDriveModel(BaseDriveModel):
         t = int(_clamp(int(throttle), -100, 100))
         s = int(_clamp(int(steering), -100, 100))
 
-        left_cmd = int(_clamp(t + s, -100, 100))
-        right_cmd = int(_clamp(t - s, -100, 100))
+        if zbot_drive is not None:
+            left_cmd, right_cmd = zbot_drive.mix(t, s)
+        else:
+            left_cmd = int(_clamp(t + s, -100, 100))
+            right_cmd = int(_clamp(t - s, -100, 100))
 
         self._apply_motor(self.left_motor, left_cmd)
         self._apply_motor(self.right_motor, right_cmd)
@@ -112,7 +122,10 @@ class DifferentialDriveModel(BaseDriveModel):
 
         forward = command >= 0
         mag = abs(int(command))
-        duty = (mag * int(self.max_duty_u16)) // 100
+        if zbot_drive is not None:
+            duty = zbot_drive.duty(command, int(self.max_duty_u16))
+        else:
+            duty = (mag * int(self.max_duty_u16)) // 100
 
         if hasattr(motor, "set"):
             motor.set(forward, duty)
@@ -201,7 +214,10 @@ class AckermannDriveModel(BaseDriveModel):
 
         forward = command >= 0
         mag = abs(int(command))
-        duty = (mag * int(self.max_duty_u16)) // 100
+        if zbot_drive is not None:
+            duty = zbot_drive.duty(command, int(self.max_duty_u16))
+        else:
+            duty = (mag * int(self.max_duty_u16)) // 100
 
         if hasattr(motor, "set"):
             motor.set(forward, duty)

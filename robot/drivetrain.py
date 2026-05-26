@@ -1,7 +1,15 @@
 # robot/drivetrain.py
 from .motors import Motor
 
+try:
+    import zbot_drive
+except ImportError:
+    zbot_drive = None
+
+
 def _clamp(x, lo, hi):
+    if zbot_drive is not None and lo == -100 and hi == 100:
+        return zbot_drive.clamp(int(x))
     return lo if x < lo else hi if x > hi else x
 
 class DifferentialDrive:
@@ -18,9 +26,12 @@ class DifferentialDrive:
         t = _clamp(int(throttle), -100, 100)
         r = _clamp(int(turn), -100, 100)
 
-        # Simple mix
-        left_cmd = _clamp(t + r, -100, 100)
-        right_cmd = _clamp(t - r, -100, 100)
+        if zbot_drive is not None:
+            left_cmd, right_cmd = zbot_drive.mix(t, r)
+        else:
+            # Simple mix
+            left_cmd = _clamp(t + r, -100, 100)
+            right_cmd = _clamp(t - r, -100, 100)
 
         self._apply(self.left, left_cmd)
         self._apply(self.right, right_cmd)
@@ -28,7 +39,10 @@ class DifferentialDrive:
     def _apply(self, motor: Motor, cmd: int):
         forward = (cmd >= 0)
         mag = abs(cmd)
-        duty = (mag * self.max_duty) // 100
+        if zbot_drive is not None:
+            duty = zbot_drive.duty(cmd, self.max_duty)
+        else:
+            duty = (mag * self.max_duty) // 100
         motor.set(forward, duty)
 
     def stop(self):

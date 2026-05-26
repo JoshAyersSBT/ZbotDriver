@@ -9,6 +9,15 @@ zbot.forward(40)
 zbot.display("Driving")
 ```
 
+Programs may be written as `user_main.py` or compiled into firmware as a native
+MicroPython C module named `user_main`. In both cases the runtime calls
+`main(zbot)` when the robot finishes booting.
+
+The runtime records which form was loaded in `zbot.status()["user"]["kind"]`.
+It reports `"python"` for a filesystem/frozen Python module and `"c"` for a
+native user module. A module can explicitly set `USER_MAIN_KIND = "python"` or
+`USER_MAIN_KIND = "c"` to override detection.
+
 Power values are usually `-100` to `100`:
 
 - positive power moves forward
