@@ -17,6 +17,10 @@ For CMake-based ports, point `USER_C_MODULES` at:
 The Python files under `robot/` import these modules when present and keep
 their existing Python implementations as fallbacks.
 
+For the full runtime context showing how these native modules sit under the
+Python async services and `zbot` API, see
+[Runtime Architecture](../../../docs/runtime-architecture.md).
+
 To build the complete ZebraBot native firmware, including these driver modules
 and the optional native `user_main.c`, point `USER_C_MODULES` at the aggregate
 CMake file:

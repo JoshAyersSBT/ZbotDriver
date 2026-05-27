@@ -18,5 +18,6 @@ or C.
 - [Student API](docs/student-api.md)
 - [Sensor usage](docs/sensors.md)
 - [Build and deploy firmware](docs/build-deploy.md)
+- [Runtime architecture and file map](docs/runtime-architecture.md)
 - [MicroPython C modules](micropython/cmodules/zbot_drivers/README.md)
 - [Native user_main.c](micropython/cmodules/user_main/README.md)

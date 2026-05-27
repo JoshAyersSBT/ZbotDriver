@@ -15,6 +15,9 @@ It includes both:
 - `zbot_drivers`: native motor, servo, mux, IMU, color, ToF, OLED, and drive helpers
 - `user_main`: optional native `user_main.c`
 
+For the default boot sequence, async task layout, and Python/C runtime boundary,
+see [Runtime Architecture](runtime-architecture.md).
+
 ## Build With WSL
 
 The Windows command line can run into long command/path issues while building

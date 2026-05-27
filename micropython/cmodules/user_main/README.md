@@ -12,6 +12,10 @@ main(zbot)
 where `zbot` is the same runtime API object passed to Python `user_main.py`
 programs.
 
+For a diagram of how native `user_main.c` interacts with the Python scheduler,
+runtime services, and driver modules, see
+[Runtime Architecture](../../../docs/runtime-architecture.md).
+
 ## Beginner-Friendly C Workflow
 
 The normal ZebraBot hardware layout is constrained enough that most C user
