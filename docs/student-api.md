@@ -23,6 +23,14 @@ C `main(zbot)` returns normally, the runtime calls `tick(zbot)` on that interval
 as a cooperative user loop. This is the preferred native pattern for display and
 sensor programs because background sensor polling continues to run.
 
+Recommended workflow:
+
+- prototype behavior in `user_main.py` with `async def main(zbot)`
+- keep long-running Python programs cooperative with `await asyncio.sleep_ms(...)`
+- move stable, performance-sensitive behavior to `user_main.c`
+- in C, put one-time setup in `main(zbot)` and repeated work in `tick(zbot)`
+- leave `user_main.py` off the device filesystem when testing native `user_main`
+
 Power values are usually `-100` to `100`:
 
 - positive power moves forward
