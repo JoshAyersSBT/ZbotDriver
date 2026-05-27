@@ -33,7 +33,7 @@ typedef struct _zbot_vl53l0x_obj_t {
     bool initialized;
 } zbot_vl53l0x_obj_t;
 
-STATIC void vl0_write_reg(zbot_vl53l0x_obj_t *self, uint8_t reg, uint8_t value) {
+static void vl0_write_reg(zbot_vl53l0x_obj_t *self, uint8_t reg, uint8_t value) {
     uint8_t data[1] = { value };
     mp_obj_t dest[5];
     mp_load_method(self->i2c, MP_QSTR_writeto_mem, dest);
@@ -43,7 +43,7 @@ STATIC void vl0_write_reg(zbot_vl53l0x_obj_t *self, uint8_t reg, uint8_t value) 
     mp_call_method_n_kw(3, 0, dest);
 }
 
-STATIC uint8_t vl0_read_reg(zbot_vl53l0x_obj_t *self, uint8_t reg) {
+static uint8_t vl0_read_reg(zbot_vl53l0x_obj_t *self, uint8_t reg) {
     mp_obj_t dest[5];
     mp_load_method(self->i2c, MP_QSTR_readfrom_mem, dest);
     dest[2] = mp_obj_new_int(self->address);
@@ -55,7 +55,7 @@ STATIC uint8_t vl0_read_reg(zbot_vl53l0x_obj_t *self, uint8_t reg) {
     return ((const uint8_t *)bufinfo.buf)[0];
 }
 
-STATIC void vl0_write_reg16(zbot_vl53l0x_obj_t *self, uint8_t reg, uint16_t value) {
+static void vl0_write_reg16(zbot_vl53l0x_obj_t *self, uint8_t reg, uint16_t value) {
     uint8_t data[2] = { (uint8_t)(value >> 8), (uint8_t)value };
     mp_obj_t dest[5];
     mp_load_method(self->i2c, MP_QSTR_writeto_mem, dest);
@@ -65,7 +65,7 @@ STATIC void vl0_write_reg16(zbot_vl53l0x_obj_t *self, uint8_t reg, uint16_t valu
     mp_call_method_n_kw(3, 0, dest);
 }
 
-STATIC uint16_t vl0_read_reg16(zbot_vl53l0x_obj_t *self, uint8_t reg) {
+static uint16_t vl0_read_reg16(zbot_vl53l0x_obj_t *self, uint8_t reg) {
     mp_obj_t dest[5];
     mp_load_method(self->i2c, MP_QSTR_readfrom_mem, dest);
     dest[2] = mp_obj_new_int(self->address);
@@ -78,7 +78,7 @@ STATIC uint16_t vl0_read_reg16(zbot_vl53l0x_obj_t *self, uint8_t reg) {
     return (uint16_t)((data[0] << 8) | data[1]);
 }
 
-STATIC void vl0_write_reg32(zbot_vl53l0x_obj_t *self, uint8_t reg, uint32_t value) {
+static void vl0_write_reg32(zbot_vl53l0x_obj_t *self, uint8_t reg, uint32_t value) {
     uint8_t data[4] = {
         (uint8_t)(value >> 24),
         (uint8_t)(value >> 16),
@@ -93,7 +93,7 @@ STATIC void vl0_write_reg32(zbot_vl53l0x_obj_t *self, uint8_t reg, uint32_t valu
     mp_call_method_n_kw(3, 0, dest);
 }
 
-STATIC mp_obj_t vl0_read_multi_obj(zbot_vl53l0x_obj_t *self, uint8_t reg, size_t len) {
+static mp_obj_t vl0_read_multi_obj(zbot_vl53l0x_obj_t *self, uint8_t reg, size_t len) {
     mp_obj_t dest[5];
     mp_load_method(self->i2c, MP_QSTR_readfrom_mem, dest);
     dest[2] = mp_obj_new_int(self->address);
@@ -102,7 +102,7 @@ STATIC mp_obj_t vl0_read_multi_obj(zbot_vl53l0x_obj_t *self, uint8_t reg, size_t
     return mp_call_method_n_kw(3, 0, dest);
 }
 
-STATIC bool vl0_address_present(zbot_vl53l0x_obj_t *self) {
+static bool vl0_address_present(zbot_vl53l0x_obj_t *self) {
     mp_obj_t dest[2];
     mp_load_method(self->i2c, MP_QSTR_scan, dest);
     mp_obj_t scan = mp_call_method_n_kw(0, 0, dest);
@@ -117,7 +117,7 @@ STATIC bool vl0_address_present(zbot_vl53l0x_obj_t *self) {
     return false;
 }
 
-STATIC mp_obj_t zbot_vl53l0x_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+static mp_obj_t zbot_vl53l0x_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum {
         ARG_i2c,
         ARG_address,
@@ -144,7 +144,7 @@ STATIC mp_obj_t zbot_vl53l0x_make_new(const mp_obj_type_t *type, size_t n_args, 
     return MP_OBJ_FROM_PTR(self);
 }
 
-STATIC mp_obj_t zbot_vl53l0x_init(size_t n_args, const mp_obj_t *args) {
+static mp_obj_t zbot_vl53l0x_init(size_t n_args, const mp_obj_t *args) {
     zbot_vl53l0x_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     bool io_2v8 = n_args < 2 || mp_obj_is_true(args[1]);
 
@@ -182,9 +182,9 @@ STATIC mp_obj_t zbot_vl53l0x_init(size_t n_args, const mp_obj_t *args) {
     self->initialized = true;
     return mp_const_true;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_vl53l0x_init_obj, 1, 2, zbot_vl53l0x_init);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_vl53l0x_init_obj, 1, 2, zbot_vl53l0x_init);
 
-STATIC mp_obj_t zbot_vl53l0x_start_continuous(size_t n_args, const mp_obj_t *args) {
+static mp_obj_t zbot_vl53l0x_start_continuous(size_t n_args, const mp_obj_t *args) {
     zbot_vl53l0x_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     int period_ms = n_args > 1 ? mp_obj_get_int(args[1]) : 0;
     if (!self->initialized) {
@@ -213,9 +213,9 @@ STATIC mp_obj_t zbot_vl53l0x_start_continuous(size_t n_args, const mp_obj_t *arg
     }
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_vl53l0x_start_continuous_obj, 1, 2, zbot_vl53l0x_start_continuous);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_vl53l0x_start_continuous_obj, 1, 2, zbot_vl53l0x_start_continuous);
 
-STATIC mp_obj_t zbot_vl53l0x_stop_continuous(mp_obj_t self_in) {
+static mp_obj_t zbot_vl53l0x_stop_continuous(mp_obj_t self_in) {
     zbot_vl53l0x_obj_t *self = MP_OBJ_TO_PTR(self_in);
     vl0_write_reg(self, VL0_SYSRANGE_START, 0x01);
     vl0_write_reg(self, 0xff, 0x01);
@@ -225,9 +225,9 @@ STATIC mp_obj_t zbot_vl53l0x_stop_continuous(mp_obj_t self_in) {
     vl0_write_reg(self, 0xff, 0x00);
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_stop_continuous_obj, zbot_vl53l0x_stop_continuous);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_stop_continuous_obj, zbot_vl53l0x_stop_continuous);
 
-STATIC mp_obj_t zbot_vl53l0x_read_range_continuous_mm(mp_obj_t self_in) {
+static mp_obj_t zbot_vl53l0x_read_range_continuous_mm(mp_obj_t self_in) {
     zbot_vl53l0x_obj_t *self = MP_OBJ_TO_PTR(self_in);
     self->did_timeout = false;
     mp_uint_t start = mp_hal_ticks_ms();
@@ -242,9 +242,9 @@ STATIC mp_obj_t zbot_vl53l0x_read_range_continuous_mm(mp_obj_t self_in) {
     vl0_write_reg(self, VL0_SYSTEM_INTERRUPT_CLEAR, 0x01);
     return mp_obj_new_int(mm);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_read_range_continuous_mm_obj, zbot_vl53l0x_read_range_continuous_mm);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_read_range_continuous_mm_obj, zbot_vl53l0x_read_range_continuous_mm);
 
-STATIC mp_obj_t zbot_vl53l0x_read_range_single_mm(mp_obj_t self_in) {
+static mp_obj_t zbot_vl53l0x_read_range_single_mm(mp_obj_t self_in) {
     zbot_vl53l0x_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if (!self->initialized) {
         mp_obj_t init_args[1] = { self_in };
@@ -270,9 +270,9 @@ STATIC mp_obj_t zbot_vl53l0x_read_range_single_mm(mp_obj_t self_in) {
     }
     return zbot_vl53l0x_read_range_continuous_mm(self_in);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_read_range_single_mm_obj, zbot_vl53l0x_read_range_single_mm);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_read_range_single_mm_obj, zbot_vl53l0x_read_range_single_mm);
 
-STATIC mp_obj_t zbot_vl53l0x_read_debug(mp_obj_t self_in) {
+static mp_obj_t zbot_vl53l0x_read_debug(mp_obj_t self_in) {
     zbot_vl53l0x_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_obj_t dict = mp_obj_new_dict(3);
     mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_distance), mp_obj_new_int(vl0_read_reg16(self, VL0_RESULT_RANGE_STATUS + 10)));
@@ -280,9 +280,9 @@ STATIC mp_obj_t zbot_vl53l0x_read_debug(mp_obj_t self_in) {
     mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_raw), vl0_read_multi_obj(self, VL0_RESULT_RANGE_STATUS, 16));
     return dict;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_read_debug_obj, zbot_vl53l0x_read_debug);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_vl53l0x_read_debug_obj, zbot_vl53l0x_read_debug);
 
-STATIC const mp_rom_map_elem_t zbot_vl53l0x_locals_dict_table[] = {
+static const mp_rom_map_elem_t zbot_vl53l0x_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&zbot_vl53l0x_init_obj) },
     { MP_ROM_QSTR(MP_QSTR_start_continuous), MP_ROM_PTR(&zbot_vl53l0x_start_continuous_obj) },
     { MP_ROM_QSTR(MP_QSTR_stop_continuous), MP_ROM_PTR(&zbot_vl53l0x_stop_continuous_obj) },
@@ -294,20 +294,21 @@ STATIC const mp_rom_map_elem_t zbot_vl53l0x_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_stop), MP_ROM_PTR(&zbot_vl53l0x_stop_continuous_obj) },
     { MP_ROM_QSTR(MP_QSTR_read_debug), MP_ROM_PTR(&zbot_vl53l0x_read_debug_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_vl53l0x_locals_dict, zbot_vl53l0x_locals_dict_table);
+static MP_DEFINE_CONST_DICT(zbot_vl53l0x_locals_dict, zbot_vl53l0x_locals_dict_table);
 
-STATIC const mp_obj_type_t zbot_vl53l0x_type = {
-    { &mp_type_type },
-    .name = MP_QSTR_VL53L0X,
-    .make_new = zbot_vl53l0x_make_new,
-    .locals_dict = (mp_obj_dict_t *)&zbot_vl53l0x_locals_dict,
-};
+MP_DEFINE_CONST_OBJ_TYPE(
+    zbot_vl53l0x_type,
+    MP_QSTR_VL53L0X,
+    MP_TYPE_FLAG_NONE,
+    make_new, zbot_vl53l0x_make_new,
+    locals_dict, &zbot_vl53l0x_locals_dict
+);
 
-STATIC const mp_rom_map_elem_t zbot_vl53l0x_module_globals_table[] = {
+static const mp_rom_map_elem_t zbot_vl53l0x_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_zbot_vl53l0x) },
     { MP_ROM_QSTR(MP_QSTR_VL53L0X), MP_ROM_PTR(&zbot_vl53l0x_type) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_vl53l0x_module_globals, zbot_vl53l0x_module_globals_table);
+static MP_DEFINE_CONST_DICT(zbot_vl53l0x_module_globals, zbot_vl53l0x_module_globals_table);
 
 const mp_obj_module_t zbot_vl53l0x_module = {
     .base = { &mp_type_module },

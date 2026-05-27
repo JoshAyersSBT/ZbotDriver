@@ -8,6 +8,7 @@ target_sources(usermod_zbot_drivers INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/zbot_tcs3472.c
     ${CMAKE_CURRENT_LIST_DIR}/zbot_vl53l0x.c
     ${CMAKE_CURRENT_LIST_DIR}/zbot_vl53l1x.c
+    ${CMAKE_CURRENT_LIST_DIR}/zbot_oled.c
     ${CMAKE_CURRENT_LIST_DIR}/zbot_drive.c
 )
 

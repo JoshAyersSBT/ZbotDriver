@@ -9,12 +9,12 @@ typedef struct _zbot_motor_obj_t {
     int power;
 } zbot_motor_obj_t;
 
-STATIC mp_obj_t zbot_machine_attr(qstr attr) {
+static mp_obj_t zbot_machine_attr(qstr attr) {
     mp_obj_t machine = mp_import_name(MP_QSTR_machine, mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
     return mp_load_attr(machine, attr);
 }
 
-STATIC int zbot_clamp_int(int value, int lo, int hi) {
+static int zbot_clamp_int(int value, int lo, int hi) {
     if (value < lo) {
         return lo;
     }
@@ -24,7 +24,7 @@ STATIC int zbot_clamp_int(int value, int lo, int hi) {
     return value;
 }
 
-STATIC void zbot_motor_write_duty(zbot_motor_obj_t *self, int duty_u16) {
+static void zbot_motor_write_duty(zbot_motor_obj_t *self, int duty_u16) {
     duty_u16 = zbot_clamp_int(duty_u16, 0, 65535);
     if (self->invert_pwm) {
         duty_u16 = 65535 - duty_u16;
@@ -36,7 +36,7 @@ STATIC void zbot_motor_write_duty(zbot_motor_obj_t *self, int duty_u16) {
     mp_call_method_n_kw(1, 0, dest);
 }
 
-STATIC mp_obj_t zbot_motor_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+static mp_obj_t zbot_motor_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum {
         ARG_pwm_gpio,
         ARG_dir_gpio,
@@ -86,7 +86,7 @@ STATIC mp_obj_t zbot_motor_make_new(const mp_obj_type_t *type, size_t n_args, si
     return MP_OBJ_FROM_PTR(self);
 }
 
-STATIC mp_obj_t zbot_motor_set(mp_obj_t self_in, mp_obj_t forward_in, mp_obj_t duty_in) {
+static mp_obj_t zbot_motor_set(mp_obj_t self_in, mp_obj_t forward_in, mp_obj_t duty_in) {
     zbot_motor_obj_t *self = MP_OBJ_TO_PTR(self_in);
     bool forward = mp_obj_is_true(forward_in);
     int duty_u16 = mp_obj_get_int(duty_in);
@@ -101,9 +101,9 @@ STATIC mp_obj_t zbot_motor_set(mp_obj_t self_in, mp_obj_t forward_in, mp_obj_t d
     self->power = forward ? percent : -percent;
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_3(zbot_motor_set_obj, zbot_motor_set);
+static MP_DEFINE_CONST_FUN_OBJ_3(zbot_motor_set_obj, zbot_motor_set);
 
-STATIC mp_obj_t zbot_motor_set_power(mp_obj_t self_in, mp_obj_t power_in) {
+static mp_obj_t zbot_motor_set_power(mp_obj_t self_in, mp_obj_t power_in) {
     int power = zbot_clamp_int(mp_obj_get_int(power_in), -100, 100);
     if (power == 0) {
         zbot_motor_obj_t *self = MP_OBJ_TO_PTR(self_in);
@@ -111,26 +111,26 @@ STATIC mp_obj_t zbot_motor_set_power(mp_obj_t self_in, mp_obj_t power_in) {
         zbot_motor_write_duty(self, 0);
         return mp_const_none;
     }
-    int duty_u16 = (MP_ABS(power) * 65535) / 100;
+    int duty_u16 = ((power < 0 ? -power : power) * 65535) / 100;
     return zbot_motor_set(self_in, mp_obj_new_bool(power > 0), mp_obj_new_int(duty_u16));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(zbot_motor_set_power_obj, zbot_motor_set_power);
+static MP_DEFINE_CONST_FUN_OBJ_2(zbot_motor_set_power_obj, zbot_motor_set_power);
 
-STATIC mp_obj_t zbot_motor_stop(mp_obj_t self_in) {
+static mp_obj_t zbot_motor_stop(mp_obj_t self_in) {
     zbot_motor_obj_t *self = MP_OBJ_TO_PTR(self_in);
     self->power = 0;
     zbot_motor_write_duty(self, 0);
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_motor_stop_obj, zbot_motor_stop);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_motor_stop_obj, zbot_motor_stop);
 
-STATIC mp_obj_t zbot_motor_power(mp_obj_t self_in) {
+static mp_obj_t zbot_motor_power(mp_obj_t self_in) {
     zbot_motor_obj_t *self = MP_OBJ_TO_PTR(self_in);
     return mp_obj_new_int(self->power);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_motor_power_obj, zbot_motor_power);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_motor_power_obj, zbot_motor_power);
 
-STATIC mp_obj_t zbot_motor_deinit(mp_obj_t self_in) {
+static mp_obj_t zbot_motor_deinit(mp_obj_t self_in) {
     zbot_motor_obj_t *self = MP_OBJ_TO_PTR(self_in);
     zbot_motor_stop(self_in);
     mp_obj_t dest[2];
@@ -138,9 +138,9 @@ STATIC mp_obj_t zbot_motor_deinit(mp_obj_t self_in) {
     mp_call_method_n_kw(0, 0, dest);
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_motor_deinit_obj, zbot_motor_deinit);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_motor_deinit_obj, zbot_motor_deinit);
 
-STATIC const mp_rom_map_elem_t zbot_motor_locals_dict_table[] = {
+static const mp_rom_map_elem_t zbot_motor_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_set), MP_ROM_PTR(&zbot_motor_set_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_power), MP_ROM_PTR(&zbot_motor_set_power_obj) },
     { MP_ROM_QSTR(MP_QSTR_stop), MP_ROM_PTR(&zbot_motor_stop_obj) },
@@ -148,20 +148,21 @@ STATIC const mp_rom_map_elem_t zbot_motor_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_power), MP_ROM_PTR(&zbot_motor_power_obj) },
     { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&zbot_motor_deinit_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_motor_locals_dict, zbot_motor_locals_dict_table);
+static MP_DEFINE_CONST_DICT(zbot_motor_locals_dict, zbot_motor_locals_dict_table);
 
-STATIC const mp_obj_type_t zbot_motor_type = {
-    { &mp_type_type },
-    .name = MP_QSTR_Motor,
-    .make_new = zbot_motor_make_new,
-    .locals_dict = (mp_obj_dict_t *)&zbot_motor_locals_dict,
-};
+MP_DEFINE_CONST_OBJ_TYPE(
+    zbot_motor_type,
+    MP_QSTR_Motor,
+    MP_TYPE_FLAG_NONE,
+    make_new, zbot_motor_make_new,
+    locals_dict, &zbot_motor_locals_dict
+);
 
-STATIC const mp_rom_map_elem_t zbot_motor_module_globals_table[] = {
+static const mp_rom_map_elem_t zbot_motor_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_zbot_motor) },
     { MP_ROM_QSTR(MP_QSTR_Motor), MP_ROM_PTR(&zbot_motor_type) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_motor_module_globals, zbot_motor_module_globals_table);
+static MP_DEFINE_CONST_DICT(zbot_motor_module_globals, zbot_motor_module_globals_table);
 
 const mp_obj_module_t zbot_motor_module = {
     .base = { &mp_type_module },

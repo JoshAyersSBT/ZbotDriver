@@ -1,79 +1,85 @@
 # robot/oled_status.py
 from machine import I2C, Pin
 import uasyncio as asyncio
-import framebuf
 import time
 
+try:
+    from zbot_oled import SH1106_I2C
+except ImportError:
+    SH1106_I2C = None
 
-class SH1106_I2C(framebuf.FrameBuffer):
-    def __init__(self, width, height, i2c, addr=0x3C, external_vcc=False):
-        self.width = width
-        self.height = height
-        self.i2c = i2c
-        self.addr = addr
-        self.external_vcc = external_vcc
+if SH1106_I2C is None:
+    import framebuf
 
-        self.pages = self.height // 8
-        self.buf = bytearray(self.width * self.pages)
-        super().__init__(self.buf, self.width, self.height, framebuf.MONO_VLSB)
+    class SH1106_I2C(framebuf.FrameBuffer):
+        def __init__(self, width, height, i2c, addr=0x3C, external_vcc=False):
+            self.width = width
+            self.height = height
+            self.i2c = i2c
+            self.addr = addr
+            self.external_vcc = external_vcc
 
-        # Many 128x64 SH1106 displays need a +2 column offset
-        self.column_offset = 2
+            self.pages = self.height // 8
+            self.buf = bytearray(self.width * self.pages)
+            super().__init__(self.buf, self.width, self.height, framebuf.MONO_VLSB)
 
-        self.poweron()
-        self.init_display()
-        self.fill(0)
-        self.show()
+            # Many 128x64 SH1106 displays need a +2 column offset.
+            self.column_offset = 2
 
-    def write_cmd(self, cmd):
-        self.i2c.writeto(self.addr, bytearray((0x80, cmd)))
+            self.poweron()
+            self.init_display()
+            self.fill(0)
+            self.show()
 
-    def write_data(self, buf):
-        self.i2c.writeto(self.addr, b"\x40" + buf)
+        def write_cmd(self, cmd):
+            self.i2c.writeto(self.addr, bytearray((0x80, cmd)))
 
-    def poweron(self):
-        pass
+        def write_data(self, buf):
+            self.i2c.writeto(self.addr, b"\x40" + buf)
 
-    def poweroff(self):
-        self.write_cmd(0xAE)
+        def poweron(self):
+            pass
 
-    def contrast(self, contrast):
-        self.write_cmd(0x81)
-        self.write_cmd(contrast)
+        def poweroff(self):
+            self.write_cmd(0xAE)
 
-    def invert(self, invert):
-        self.write_cmd(0xA7 if invert else 0xA6)
+        def contrast(self, contrast):
+            self.write_cmd(0x81)
+            self.write_cmd(contrast)
 
-    def init_display(self):
-        # SH1106 128x64 init
-        for cmd in (
-            0xAE,       # display off
-            0xD5, 0x80, # clock divide
-            0xA8, 0x3F, # multiplex = 64-1
-            0xD3, 0x00, # display offset
-            0x40,       # start line = 0
-            0xAD, 0x8B, # DC-DC on
-            0xA1,       # segment remap
-            0xC8,       # COM scan dec
-            0xDA, 0x12, # COM pins
-            0x81, 0x7F, # contrast
-            0xD9, 0x22, # pre-charge
-            0xDB, 0x35, # VCOM detect
-            0xA4,       # display follows RAM
-            0xA6,       # normal display
-            0xAF,       # display on
-        ):
-            self.write_cmd(cmd)
+        def invert(self, invert):
+            self.write_cmd(0xA7 if invert else 0xA6)
 
-    def show(self):
-        # Write one page at a time
-        for page in range(self.pages):
-            self.write_cmd(0xB0 | page)  # page address
-            self.write_cmd(0x02)         # lower column address (offset = 2)
-            self.write_cmd(0x10)         # higher column address
-            start = self.width * page
-            end = start + self.width
-            self.write_data(self.buf[start:end])
+        def init_display(self):
+            # SH1106 128x64 init.
+            for cmd in (
+                0xAE,       # display off
+                0xD5, 0x80, # clock divide
+                0xA8, 0x3F, # multiplex = 64-1
+                0xD3, 0x00, # display offset
+                0x40,       # start line = 0
+                0xAD, 0x8B, # DC-DC on
+                0xA1,       # segment remap
+                0xC8,       # COM scan dec
+                0xDA, 0x12, # COM pins
+                0x81, 0x7F, # contrast
+                0xD9, 0x22, # pre-charge
+                0xDB, 0x35, # VCOM detect
+                0xA4,       # display follows RAM
+                0xA6,       # normal display
+                0xAF,       # display on
+            ):
+                self.write_cmd(cmd)
+
+        def show(self):
+            # Write one page at a time.
+            for page in range(self.pages):
+                self.write_cmd(0xB0 | page)  # page address
+                self.write_cmd(0x02)         # lower column address (offset = 2)
+                self.write_cmd(0x10)         # higher column address
+                start = self.width * page
+                end = start + self.width
+                self.write_data(self.buf[start:end])
 
 
 class OledStatus:

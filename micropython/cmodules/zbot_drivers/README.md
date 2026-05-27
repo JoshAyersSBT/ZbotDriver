@@ -26,5 +26,6 @@ Exposed modules:
 - `zbot_tcs3472.TCS3472`
 - `zbot_vl53l0x.VL53L0X`
 - `zbot_vl53l1x.VL53L1X`
+- `zbot_oled.SH1106_I2C`
 - `zbot_drive.mix(throttle, steering)`
 - `zbot_drive.duty(command, max_duty_u16)`

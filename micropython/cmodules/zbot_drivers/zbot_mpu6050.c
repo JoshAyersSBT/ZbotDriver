@@ -17,12 +17,12 @@ typedef struct _zbot_mpu6050_obj_t {
     uint8_t addr;
 } zbot_mpu6050_obj_t;
 
-STATIC mp_obj_t zbot_mpu_machine_attr(qstr attr) {
+static mp_obj_t zbot_mpu_machine_attr(qstr attr) {
     mp_obj_t machine = mp_import_name(MP_QSTR_machine, mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
     return mp_load_attr(machine, attr);
 }
 
-STATIC void zbot_mpu_select(zbot_mpu6050_obj_t *self) {
+static void zbot_mpu_select(zbot_mpu6050_obj_t *self) {
     if (self->mux != mp_const_none && self->mux_channel != mp_const_none) {
         mp_obj_t dest[3];
         mp_load_method(self->mux, MP_QSTR_select, dest);
@@ -31,7 +31,7 @@ STATIC void zbot_mpu_select(zbot_mpu6050_obj_t *self) {
     }
 }
 
-STATIC void zbot_mpu_write8(zbot_mpu6050_obj_t *self, uint8_t reg, uint8_t value) {
+static void zbot_mpu_write8(zbot_mpu6050_obj_t *self, uint8_t reg, uint8_t value) {
     zbot_mpu_select(self);
     uint8_t data[1] = { value };
     mp_obj_t dest[5];
@@ -42,7 +42,7 @@ STATIC void zbot_mpu_write8(zbot_mpu6050_obj_t *self, uint8_t reg, uint8_t value
     mp_call_method_n_kw(3, 0, dest);
 }
 
-STATIC mp_obj_t zbot_mpu_read_mem(zbot_mpu6050_obj_t *self, uint8_t reg, size_t len) {
+static mp_obj_t zbot_mpu_read_mem(zbot_mpu6050_obj_t *self, uint8_t reg, size_t len) {
     zbot_mpu_select(self);
     mp_obj_t dest[5];
     mp_load_method(self->i2c, MP_QSTR_readfrom_mem, dest);
@@ -52,11 +52,11 @@ STATIC mp_obj_t zbot_mpu_read_mem(zbot_mpu6050_obj_t *self, uint8_t reg, size_t 
     return mp_call_method_n_kw(3, 0, dest);
 }
 
-STATIC int16_t zbot_i16_be(const uint8_t *data) {
+static int16_t zbot_i16_be(const uint8_t *data) {
     return (int16_t)((data[0] << 8) | data[1]);
 }
 
-STATIC mp_obj_t zbot_mpu6050_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+static mp_obj_t zbot_mpu6050_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum {
         ARG_i2c_id,
         ARG_sda_gpio,
@@ -110,13 +110,13 @@ STATIC mp_obj_t zbot_mpu6050_make_new(const mp_obj_type_t *type, size_t n_args, 
     return MP_OBJ_FROM_PTR(self);
 }
 
-STATIC mp_obj_t zbot_mpu6050_read_raw(mp_obj_t self_in) {
+static mp_obj_t zbot_mpu6050_read_raw(mp_obj_t self_in) {
     zbot_mpu6050_obj_t *self = MP_OBJ_TO_PTR(self_in);
     return zbot_mpu_read_mem(self, MPU6050_REG_ACCEL_XOUT_H, 14);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_mpu6050_read_raw_obj, zbot_mpu6050_read_raw);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_mpu6050_read_raw_obj, zbot_mpu6050_read_raw);
 
-STATIC mp_obj_t zbot_mpu6050_read_scaled(mp_obj_t self_in) {
+static mp_obj_t zbot_mpu6050_read_scaled(mp_obj_t self_in) {
     zbot_mpu6050_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_obj_t raw = zbot_mpu_read_mem(self, MPU6050_REG_ACCEL_XOUT_H, 14);
     mp_buffer_info_t bufinfo;
@@ -141,26 +141,27 @@ STATIC mp_obj_t zbot_mpu6050_read_scaled(mp_obj_t self_in) {
     mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_temp_c), mp_obj_new_float(((mp_float_t)temp_raw / 340.0f) + 36.53f));
     return dict;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_mpu6050_read_scaled_obj, zbot_mpu6050_read_scaled);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_mpu6050_read_scaled_obj, zbot_mpu6050_read_scaled);
 
-STATIC const mp_rom_map_elem_t zbot_mpu6050_locals_dict_table[] = {
+static const mp_rom_map_elem_t zbot_mpu6050_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_read_raw), MP_ROM_PTR(&zbot_mpu6050_read_raw_obj) },
     { MP_ROM_QSTR(MP_QSTR_read_scaled), MP_ROM_PTR(&zbot_mpu6050_read_scaled_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_mpu6050_locals_dict, zbot_mpu6050_locals_dict_table);
+static MP_DEFINE_CONST_DICT(zbot_mpu6050_locals_dict, zbot_mpu6050_locals_dict_table);
 
-STATIC const mp_obj_type_t zbot_mpu6050_type = {
-    { &mp_type_type },
-    .name = MP_QSTR_MPU6050,
-    .make_new = zbot_mpu6050_make_new,
-    .locals_dict = (mp_obj_dict_t *)&zbot_mpu6050_locals_dict,
-};
+MP_DEFINE_CONST_OBJ_TYPE(
+    zbot_mpu6050_type,
+    MP_QSTR_MPU6050,
+    MP_TYPE_FLAG_NONE,
+    make_new, zbot_mpu6050_make_new,
+    locals_dict, &zbot_mpu6050_locals_dict
+);
 
-STATIC const mp_rom_map_elem_t zbot_mpu6050_module_globals_table[] = {
+static const mp_rom_map_elem_t zbot_mpu6050_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_zbot_mpu6050) },
     { MP_ROM_QSTR(MP_QSTR_MPU6050), MP_ROM_PTR(&zbot_mpu6050_type) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_mpu6050_module_globals, zbot_mpu6050_module_globals_table);
+static MP_DEFINE_CONST_DICT(zbot_mpu6050_module_globals, zbot_mpu6050_module_globals_table);
 
 const mp_obj_module_t zbot_mpu6050_module = {
     .base = { &mp_type_module },

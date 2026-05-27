@@ -8,7 +8,7 @@ typedef struct _zbot_tca9548a_obj_t {
     int current;
 } zbot_tca9548a_obj_t;
 
-STATIC mp_obj_t zbot_tca9548a_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+static mp_obj_t zbot_tca9548a_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum {
         ARG_i2c,
         ARG_addr,
@@ -29,7 +29,7 @@ STATIC mp_obj_t zbot_tca9548a_make_new(const mp_obj_type_t *type, size_t n_args,
     return MP_OBJ_FROM_PTR(self);
 }
 
-STATIC void zbot_tca9548a_write(zbot_tca9548a_obj_t *self, uint8_t value) {
+static void zbot_tca9548a_write(zbot_tca9548a_obj_t *self, uint8_t value) {
     uint8_t data[1] = { value };
     mp_obj_t data_obj = mp_obj_new_bytes(data, 1);
     mp_obj_t dest[4];
@@ -39,7 +39,7 @@ STATIC void zbot_tca9548a_write(zbot_tca9548a_obj_t *self, uint8_t value) {
     mp_call_method_n_kw(2, 0, dest);
 }
 
-STATIC mp_obj_t zbot_tca9548a_select(mp_obj_t self_in, mp_obj_t channel_in) {
+static mp_obj_t zbot_tca9548a_select(mp_obj_t self_in, mp_obj_t channel_in) {
     zbot_tca9548a_obj_t *self = MP_OBJ_TO_PTR(self_in);
     int channel = mp_obj_get_int(channel_in);
     if (channel < 0 || channel > 7) {
@@ -50,44 +50,45 @@ STATIC mp_obj_t zbot_tca9548a_select(mp_obj_t self_in, mp_obj_t channel_in) {
     self->current = channel;
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(zbot_tca9548a_select_obj, zbot_tca9548a_select);
+static MP_DEFINE_CONST_FUN_OBJ_2(zbot_tca9548a_select_obj, zbot_tca9548a_select);
 
-STATIC mp_obj_t zbot_tca9548a_disable_all(mp_obj_t self_in) {
+static mp_obj_t zbot_tca9548a_disable_all(mp_obj_t self_in) {
     zbot_tca9548a_obj_t *self = MP_OBJ_TO_PTR(self_in);
     zbot_tca9548a_write(self, 0);
     self->current = -1;
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_tca9548a_disable_all_obj, zbot_tca9548a_disable_all);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_tca9548a_disable_all_obj, zbot_tca9548a_disable_all);
 
-STATIC mp_obj_t zbot_tca9548a_current(mp_obj_t self_in) {
+static mp_obj_t zbot_tca9548a_current(mp_obj_t self_in) {
     zbot_tca9548a_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if (self->current < 0) {
         return mp_const_none;
     }
     return mp_obj_new_int(self->current);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(zbot_tca9548a_current_obj, zbot_tca9548a_current);
+static MP_DEFINE_CONST_FUN_OBJ_1(zbot_tca9548a_current_obj, zbot_tca9548a_current);
 
-STATIC const mp_rom_map_elem_t zbot_tca9548a_locals_dict_table[] = {
+static const mp_rom_map_elem_t zbot_tca9548a_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_select), MP_ROM_PTR(&zbot_tca9548a_select_obj) },
     { MP_ROM_QSTR(MP_QSTR_disable_all), MP_ROM_PTR(&zbot_tca9548a_disable_all_obj) },
     { MP_ROM_QSTR(MP_QSTR_current_channel), MP_ROM_PTR(&zbot_tca9548a_current_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_tca9548a_locals_dict, zbot_tca9548a_locals_dict_table);
+static MP_DEFINE_CONST_DICT(zbot_tca9548a_locals_dict, zbot_tca9548a_locals_dict_table);
 
-STATIC const mp_obj_type_t zbot_tca9548a_type = {
-    { &mp_type_type },
-    .name = MP_QSTR_TCA9548A,
-    .make_new = zbot_tca9548a_make_new,
-    .locals_dict = (mp_obj_dict_t *)&zbot_tca9548a_locals_dict,
-};
+MP_DEFINE_CONST_OBJ_TYPE(
+    zbot_tca9548a_type,
+    MP_QSTR_TCA9548A,
+    MP_TYPE_FLAG_NONE,
+    make_new, zbot_tca9548a_make_new,
+    locals_dict, &zbot_tca9548a_locals_dict
+);
 
-STATIC const mp_rom_map_elem_t zbot_tca9548a_module_globals_table[] = {
+static const mp_rom_map_elem_t zbot_tca9548a_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_zbot_tca9548a) },
     { MP_ROM_QSTR(MP_QSTR_TCA9548A), MP_ROM_PTR(&zbot_tca9548a_type) },
 };
-STATIC MP_DEFINE_CONST_DICT(zbot_tca9548a_module_globals, zbot_tca9548a_module_globals_table);
+static MP_DEFINE_CONST_DICT(zbot_tca9548a_module_globals, zbot_tca9548a_module_globals_table);
 
 const mp_obj_module_t zbot_tca9548a_module = {
     .base = { &mp_type_module },

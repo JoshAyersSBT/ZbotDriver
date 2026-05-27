@@ -376,10 +376,25 @@ class SensorHub:
             import time
             time.sleep_ms(80)
 
-            dist = sensor.read_range_continuous_mm()
+            dist = None
+            last_error = None
+            for _ in range(5):
+                try:
+                    sample = int(sensor.read_range_continuous_mm())
+                    if 20 <= sample <= 4000:
+                        dist = sample
+                        break
+                    last_error = "invalid {}".format(sample)
+                except Exception as read_err:
+                    last_error = read_err
+                time.sleep_ms(30)
 
-            if not (20 <= dist <= 4000):
-                return False
+            if dist is None:
+                self._notify("SNS_DBG {} vl53l0x_invalid {}".format(port, last_error))
+                try:
+                    dist = int(sensor.read_reg16(sensor.RESULT_RANGE_STATUS + 10))
+                except Exception:
+                    dist = 8191
 
             self._tof[port] = ("VL53L0X", sensor)
             self._last_value[("VL53L0X", port)] = dist
@@ -399,11 +414,11 @@ class SensorHub:
             ",".join(hex(a) for a in addrs)
         ))
 
-        if self._try_vl53l0x(port):
-            return "VL53L0X"
-
         if self._try_tcs3472(port):
             return "TCS3472"
+
+        if self._try_vl53l0x(port):
+            return "VL53L0X"
 
         return "unidentified"
 
@@ -436,7 +451,14 @@ class SensorHub:
         try:
             self._select(port)
 
-            if kind == "VL53L1X" and hasattr(sensor, "read_debug"):
+            if kind == "VL53L0X" and hasattr(sensor, "read_debug"):
+                sample = sensor.read_debug()
+                dist = int(sample.get("distance", 8191))
+
+                if dist <= 0 or dist >= 4000 or dist in (65535, 8190, 8191):
+                    self._notify("SNS_ERR {} {} invalid {}".format(port, kind, dist))
+
+            elif kind == "VL53L1X" and hasattr(sensor, "read_debug"):
                 sample = sensor.read_debug()
 
                 self._notify(
