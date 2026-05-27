@@ -2,6 +2,49 @@ import time
 import uasyncio as asyncio
 from machine import I2C, Pin
 
+PREACTIVE_BLE = None
+
+try:
+    import builtins
+    PREACTIVE_BLE = getattr(builtins, "_zbot_preactive_ble", None)
+except Exception:
+    PREACTIVE_BLE = None
+
+if PREACTIVE_BLE is None:
+    try:
+        import bluetooth
+        import gc
+
+        _early_ble = bluetooth.BLE()
+        if _early_ble.active():
+            PREACTIVE_BLE = _early_ble
+            print("[INFO] BOOT: using active BLE controller")
+        else:
+            for _early_ble_attempt in range(1, 4):
+                try:
+                    try:
+                        _early_ble.active(False)
+                    except Exception:
+                        pass
+                    gc.collect()
+                    time.sleep_ms(250 * _early_ble_attempt)
+                    _early_ble.active(True)
+                    PREACTIVE_BLE = _early_ble
+                    print("[INFO] BOOT: BLE controller preactivated early")
+                    break
+                except Exception as _early_ble_err:
+                    print("[ERR] BLE_EARLY_PREACTIVE_{} {}".format(_early_ble_attempt, repr(_early_ble_err)))
+                    time.sleep_ms(400 * _early_ble_attempt)
+    except Exception as _early_ble_import_err:
+        print("[ERR] BLE_EARLY_PREIMPORT {}".format(repr(_early_ble_import_err)))
+else:
+    print("[INFO] BOOT: using boot.py BLE controller")
+
+try:
+    import bluetooth
+except Exception:
+    bluetooth = None
+
 import robot.config as robot_config
 
 from robot.motors import Motor
@@ -21,7 +64,6 @@ from robot.debug_io import (
     diag,
     state,
     set_ble_sink,
-    replay_boot_log,
 )
 
 SAFE_MODE_PIN = 0
@@ -1134,6 +1176,73 @@ async def _boot_complete_message(api):
     await asyncio.sleep_ms(1200)
 
 
+def _attach_ble_teleop(api, teleop, imu=None, start_imu=True):
+    api.register_handle("teleop", teleop)
+    set_ble_sink(teleop)
+
+    motor_feedback = api.get_handle("motor_feedback")
+    motor_scanner = api.get_handle("motor_scanner")
+    motor_port_map = api.get_handle("motor_port_map", {})
+
+    teleop.motor_feedback = motor_feedback
+    teleop.motor_scanner = motor_scanner
+    teleop.motor_ports = ACTIVE_MOTOR_PORTS
+    teleop.motor_port_map = dict(motor_port_map)
+
+    sensor_hub = api.get_handle("sensor_hub")
+    if sensor_hub is not None:
+        try:
+            sensor_hub.notify = teleop.notify_line
+        except Exception as e:
+            error("BLE_SENSOR_NOTIFY_ATTACH", e)
+
+    if motor_scanner is not None:
+        try:
+            motor_scanner.notify = teleop.notify_line
+        except Exception as e:
+            error("BLE_MOTOR_NOTIFY_ATTACH", e)
+
+    if start_imu and imu is not None and api.get_handle("teleop_imu_task_started") is None:
+        imu_task_fn = getattr(teleop, "imu_task", None)
+        if imu_task_fn is not None:
+            try:
+                api.register_task("imu", asyncio.create_task(imu_task_fn()))
+                api.register_handle("teleop_imu_task_started", True)
+                info("BOOT: IMU task started")
+                state("TASK", "imu_started")
+            except Exception as e:
+                error("IMU_TASK_START", e)
+
+
+async def _deferred_ble_start_task(api, drive, steering, imu, oled):
+    await asyncio.sleep_ms(3000)
+
+    for attempt in range(1, 9):
+        if api.get_handle("teleop") is not None:
+            return
+
+        try:
+            info("BOOT: deferred BLE init attempt {}".format(attempt))
+            teleop = BleTeleop(
+                drive=drive,
+                steering=steering,
+                imu=imu,
+                imu_period_ms=MPU_PERIOD_MS,
+                oled=oled,
+            )
+            _attach_ble_teleop(api, teleop, imu=imu)
+            info("BOOT: BLE teleop initialized")
+            state("BOOT", "ble_ok")
+            return
+        except Exception as e:
+            error("BLE_DEFERRED_INIT", e)
+            state("BOOT", "ble_retry_{}".format(attempt))
+            await asyncio.sleep_ms(2500)
+
+    warn("BOOT: deferred BLE init exhausted")
+    state("BOOT", "ble_failed")
+
+
 def _detect_user_main_kind(user_main, user_fn):
     try:
         override = getattr(user_main, "USER_MAIN_KIND", None)
@@ -1275,6 +1384,7 @@ async def _run_user_program(api):
 async def main():
     global API
     global zbot
+    global PREACTIVE_BLE
 
     teleop = None
     sensor_hub = None
@@ -1504,10 +1614,10 @@ async def main():
             imu=imu,
             imu_period_ms=MPU_PERIOD_MS,
             oled=oled,
+            ble=PREACTIVE_BLE,
         )
-        api.register_handle("teleop", teleop)
-        set_ble_sink(teleop)
-        replay_boot_log()
+        PREACTIVE_BLE = None
+        _attach_ble_teleop(api, teleop, imu=imu, start_imu=False)
 
         info("BOOT: BLE teleop initialized")
         state("BOOT", "ble_ok")
@@ -1515,8 +1625,8 @@ async def main():
         teleop = None
         error("BLE_INIT", e)
         _boot_oled(api, "ZebraBot", "BLE init fail", str(type(e).__name__))
-        warn("BOOT: continuing without BLE")
-        state("BOOT", "ble_failed")
+        warn("BOOT: BLE init deferred")
+        state("BOOT", "ble_deferred")
 
     try:
         notify_fn = teleop.notify_line if teleop is not None else None
@@ -1569,6 +1679,17 @@ async def main():
         motor_feedback = None
         motor_scanner = None
 
+    if teleop is None:
+        try:
+            api.register_task(
+                "ble_deferred",
+                asyncio.create_task(_deferred_ble_start_task(api, runtime_drive, steer, imu, oled)),
+            )
+            info("BOOT: deferred BLE task scheduled")
+            state("TASK", "ble_deferred_started")
+        except Exception as e:
+            error("BLE_DEFERRED_TASK", e)
+
     info("BOOT: robot boot complete")
     state("BOOT", "complete")
     api.status["boot"]["state"] = "complete"
@@ -1584,18 +1705,13 @@ async def main():
         except Exception as e:
             error("SENSOR_HUB_TASK", e)
 
-    if imu is not None and teleop is not None:
-        imu_task_fn = getattr(teleop, "imu_task", None)
-        if imu_task_fn is not None:
-            try:
-                api.register_task("imu", asyncio.create_task(imu_task_fn()))
-                info("BOOT: IMU task started")
-                state("TASK", "imu_started")
-            except Exception as e:
-                error("IMU_TASK_START", e)
-        else:
-            warn("BOOT: teleop.imu_task missing")
-            state("TASK", "imu_missing")
+    if api.get_handle("teleop_imu_task_started") is not None:
+        pass
+    elif imu is not None and teleop is not None:
+        _attach_ble_teleop(api, teleop, imu=imu)
+    elif imu is not None:
+        info("BOOT: IMU task waiting for BLE")
+        state("TASK", "imu_waiting_ble")
     else:
         info("BOOT: IMU task skipped (no IMU)")
         state("TASK", "imu_skipped")
@@ -1668,7 +1784,39 @@ def _safe_mode_requested():
         return False
 
 
+def _preactivate_ble_controller():
+    try:
+        import bluetooth
+        import gc
+    except Exception as e:
+        error("BLE_PREIMPORT", e)
+        return None
+
+    ble = bluetooth.BLE()
+    for attempt in range(1, 4):
+        try:
+            try:
+                ble.active(False)
+            except Exception:
+                pass
+            gc.collect()
+            time.sleep_ms(250 * attempt)
+            ble.active(True)
+            info("BOOT: BLE controller preactivated")
+            state("BOOT", "ble_controller_active")
+            return ble
+        except Exception as e:
+            error("BLE_PREACTIVE_{}".format(attempt), e)
+            time.sleep_ms(400 * attempt)
+
+    warn("BOOT: BLE controller preactivation failed")
+    state("BOOT", "ble_controller_failed")
+    return None
+
+
 def boot():
+    global PREACTIVE_BLE
+
     info("BOOT: main.py entry")
 
     if _safe_mode_requested():
@@ -1686,6 +1834,8 @@ def boot():
         print("BOOT: launch in {}...".format(remaining))
         time.sleep(1)
 
+    if PREACTIVE_BLE is None:
+        PREACTIVE_BLE = _preactivate_ble_controller()
     asyncio.run(main())
 
 
