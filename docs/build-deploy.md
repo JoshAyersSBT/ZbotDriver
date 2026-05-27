@@ -114,3 +114,9 @@ The current native `user_main.c` displays live sensor data as a user program:
 The runtime calls `user_main.main(zbot)` once. If the native module also exports
 `tick(zbot)`, the runtime calls it cooperatively every `USER_MAIN_TICK_MS`
 milliseconds so sensors and background tasks keep running.
+
+Recommended C user programs should keep `main(zbot)` short and put repeated
+display/sensor work in `tick(zbot)`. See
+[Native user_main.c](../micropython/cmodules/user_main/README.md) for the
+beginner-friendly C workflow and the standard color-port-1 / ToF-port-2
+starting point.

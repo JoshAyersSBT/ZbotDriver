@@ -12,6 +12,46 @@ main(zbot)
 where `zbot` is the same runtime API object passed to Python `user_main.py`
 programs.
 
+## Beginner-Friendly C Workflow
+
+The normal ZebraBot hardware layout is constrained enough that most C user
+programs can start from the same recipe:
+
+- OLED display is managed by the runtime through `zbot.display(...)`
+- sensor port `1` is commonly used for the color sensor
+- sensor port `2` is commonly used for the ToF distance sensor
+- actuator ports `1` through `4` are available, but do not command motors unless
+  motors are actually attached
+- runtime background tasks keep scanning sensors and buttons for you
+
+For most native C user programs, edit only these parts first:
+
+```c
+#define COLOR_PORT 1
+#define TOF_PORT 2
+#define USER_TICK_MS 1000
+```
+
+Then change the lines shown on the display inside `user_main_tick(...)`.
+
+The intended shape is:
+
+```c
+main(zbot)      // show startup text, initialize small state, then return
+tick(zbot)      // read sensors and update display once per tick
+```
+
+Avoid this shape:
+
+```c
+while (true) {
+    // do not do this in C user_main
+}
+```
+
+The runtime already owns the loop. Letting the runtime call `tick(zbot)` keeps
+sensor polling, buttons, display ownership, and other services alive.
+
 ## Recommended Native User Pattern
 
 Use `main(zbot)` for one-time startup work and use `tick(zbot)` for repeated
@@ -92,6 +132,57 @@ The important pieces are:
 - `tick(zbot)` is optional, but recommended for repeated behavior.
 - `USER_MAIN_TICK_MS` controls the cooperative tick interval.
 - The `zbot` object is the same API object used by Python user programs.
+
+## Simple Native Sensor Display
+
+The included `user_main.c` is the recommended starting point for a first native
+C program. It:
+
+- announces that the C user program started
+- displays a startup page
+- reads color data from port `1`
+- reads ToF distance from port `2`
+- refreshes the OLED once per second
+
+The beginner edit points are:
+
+```c
+bool color_ok = user_main_read_color(zbot, 1, color, sizeof(color));
+bool rgb_ok = user_main_read_rgb(zbot, 1, &r, &g, &b, &clear);
+bool tof_ok = user_main_read_tof(zbot, 2, &tof);
+```
+
+Change only the port numbers when the hardware moves. For example, if the ToF
+sensor moves from port `2` to port `3`, change the `2` in
+`user_main_read_tof(zbot, 2, &tof)` to `3`.
+
+Display lines are plain text:
+
+```c
+user_main_display(zbot, "C User Sensors", line2, line3, line4);
+```
+
+Keep each line short. The OLED is small, so aim for about 16 characters per
+line.
+
+## Runtime API Calls From C
+
+Native C code calls the same `zbot` methods that Python user code calls, but it
+does so through MicroPython's C API. The helper functions in `user_main.c`
+hide most of that.
+
+Use these helpers as the first layer:
+
+- `user_main_display(zbot, line1, line2, line3, line4)`
+- `user_main_notify(zbot, message)`
+- `user_main_read_color(zbot, port, buffer, buffer_len)`
+- `user_main_read_rgb(zbot, port, &r, &g, &b, &clear)`
+- `user_main_read_tof(zbot, port, &distance_mm)`
+
+Add new helpers in this same style when you need more of the runtime API. For
+example, a motor helper would call `zbot.motor(port)` or another existing zbot
+method, but keep motor examples separate from sensor examples so beginner
+programs do not move hardware by accident.
 
 ## How It Ties Into The Python Runtime
 
