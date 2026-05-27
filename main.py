@@ -1024,8 +1024,11 @@ def _sensor_overview_pages(api):
     if user.get("last_error"):
         err_name = str(user.get("last_error"))[:18]
         pages.append(("ZebraBot", "User Error", err_name))
+    elif user.get("module"):
+        kind = str(user.get("kind") or "user")[:10]
+        pages.append(("ZebraBot", "User stopped", kind))
     else:
-        pages.append(("ZebraBot", "No user code", "Sensor monitor"))
+        pages.append(("ZebraBot", "Starting user", "Sensor monitor"))
 
     ports = [1, 2, 3, 4, 5, 6]
     for i in range(0, len(ports), 3):
@@ -1234,8 +1237,20 @@ async def _run_user_program(api):
             except TypeError:
                 result = user_fn()
 
-        if hasattr(result, "__await__"):
+        if hasattr(result, "__await__") or hasattr(result, "send"):
             await result
+        else:
+            tick_fn = getattr(user_main, "tick", None)
+            if tick_fn is not None:
+                tick_ms = int(getattr(user_main, "USER_MAIN_TICK_MS", 1000))
+                if tick_ms < 50:
+                    tick_ms = 50
+                while True:
+                    try:
+                        tick_fn(zbot)
+                    except TypeError:
+                        tick_fn()
+                    await asyncio.sleep_ms(tick_ms)
 
     except Exception as e:
         api.status["user"]["last_error"] = repr(e)
