@@ -18,6 +18,11 @@ It reports `"python"` for a filesystem/frozen Python module and `"c"` for a
 native user module. A module can explicitly set `USER_MAIN_KIND = "python"` or
 `USER_MAIN_KIND = "c"` to override detection.
 
+Native C programs may also export `tick(zbot)` and `USER_MAIN_TICK_MS`. When a
+C `main(zbot)` returns normally, the runtime calls `tick(zbot)` on that interval
+as a cooperative user loop. This is the preferred native pattern for display and
+sensor programs because background sensor polling continues to run.
+
 Power values are usually `-100` to `100`:
 
 - positive power moves forward

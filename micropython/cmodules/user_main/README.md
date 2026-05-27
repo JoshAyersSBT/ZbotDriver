@@ -30,3 +30,18 @@ make USER_C_MODULES=/path/to/zbotDriver/micropython/cmodules/user_main
 
 Edit `user_main.c` to implement the robot behavior. Native `main()` may return
 normally, or it may return a coroutine object if you build one from C.
+
+For cooperative native user programs, export a `tick(zbot)` function and set
+`USER_MAIN_TICK_MS`. The runtime calls `main(zbot)` once, then calls
+`tick(zbot)` on that interval when `main()` returns normally. This is preferred
+for display and sensor loops because it lets the MicroPython scheduler continue
+running the sensor hub and other runtime tasks.
+
+The included example uses this pattern to update the OLED with:
+
+- color sensor data from port 1
+- RGB readings from port 1
+- ToF distance from port 2
+
+See [Build And Deploy Firmware](../../../docs/build-deploy.md) for the WSL
+build, firmware artifact, flash, and runtime restore workflow.
