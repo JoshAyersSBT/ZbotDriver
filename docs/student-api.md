@@ -11,6 +11,7 @@ zbot.display("Driving")
 
 Each API topic has its own page:
 
+- [ZebraBoard overview](board-overview.md)
 - [Overview](student-api/overview.md)
 - [Robot state](student-api/robot-state.md)
 - [Driving](student-api/driving.md)
@@ -24,9 +25,6 @@ Each API topic has its own page:
 - [Sensor ports](student-api/sensor-ports.md)
 - [Distance sensor](student-api/distance-sensor.md)
 - [Color sensor](student-api/color-sensor.md)
-- [Raw RGB readings](student-api/raw-rgb.md)
-- [Color match details](student-api/color-match.md)
-- [32-color palette](student-api/color-palette.md)
 - [Full sensor snapshot](student-api/sensor-snapshot.md)
 - [Sensor notes](student-api/sensor-notes.md)
 - [IMU](student-api/imu.md)

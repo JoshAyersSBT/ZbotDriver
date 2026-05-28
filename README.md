@@ -15,6 +15,7 @@ or C.
 
 ## Documentation
 
+- [ZebraBoard overview](docs/board-overview.md)
 - [Student API](docs/student-api.md)
 - [Build and deploy firmware](docs/build-deploy.md)
 - [Runtime architecture and file map](docs/runtime-architecture.md)

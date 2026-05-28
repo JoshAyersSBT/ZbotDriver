@@ -144,6 +144,9 @@ use.
 
 ### Documentation
 
+- `docs/board-overview.md`: Student-facing board diagram and port/component
+  location guide.
+- `docs/assets/zebra-board.svg`: SVG render of the ZebraBoard layout.
 - `docs/student-api.md`: Student-facing `zbot` API index for motors, servos,
   drive helpers, buttons, sensors, display, notifications, and status snapshots.
 - `docs/student-api/*.md`: One student API topic per document, including sensor

@@ -16,8 +16,5 @@ Sensor topics:
 - [Sensor ports](sensor-ports.md)
 - [Distance sensor](distance-sensor.md)
 - [Color sensor](color-sensor.md)
-- [Raw RGB readings](raw-rgb.md)
-- [Color match details](color-match.md)
-- [32-color palette](color-palette.md)
 - [Full sensor snapshot](sensor-snapshot.md)
 - [Sensor notes](sensor-notes.md)
