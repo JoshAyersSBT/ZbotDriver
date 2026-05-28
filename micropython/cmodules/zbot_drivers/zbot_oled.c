@@ -142,6 +142,64 @@ static mp_obj_t zbot_sh1106_text(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_sh1106_text_obj, 4, 5, zbot_sh1106_text);
 
+static mp_obj_t zbot_sh1106_pixel(size_t n_args, const mp_obj_t *args) {
+    zbot_sh1106_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_t fb_args[3] = {
+        args[1],
+        args[2],
+        n_args > 3 ? args[3] : mp_obj_new_int(1),
+    };
+    zbot_sh1106_fb_call(self, MP_QSTR_pixel, 3, fb_args);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_sh1106_pixel_obj, 3, 4, zbot_sh1106_pixel);
+
+static mp_obj_t zbot_sh1106_hline(size_t n_args, const mp_obj_t *args) {
+    zbot_sh1106_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_t fb_args[4] = { args[1], args[2], args[3], args[4] };
+    zbot_sh1106_fb_call(self, MP_QSTR_hline, 4, fb_args);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_sh1106_hline_obj, 5, 5, zbot_sh1106_hline);
+
+static mp_obj_t zbot_sh1106_vline(size_t n_args, const mp_obj_t *args) {
+    zbot_sh1106_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_t fb_args[4] = { args[1], args[2], args[3], args[4] };
+    zbot_sh1106_fb_call(self, MP_QSTR_vline, 4, fb_args);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_sh1106_vline_obj, 5, 5, zbot_sh1106_vline);
+
+static mp_obj_t zbot_sh1106_line(size_t n_args, const mp_obj_t *args) {
+    zbot_sh1106_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_t fb_args[5] = { args[1], args[2], args[3], args[4], args[5] };
+    zbot_sh1106_fb_call(self, MP_QSTR_line, 5, fb_args);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_sh1106_line_obj, 6, 6, zbot_sh1106_line);
+
+static mp_obj_t zbot_sh1106_rect(size_t n_args, const mp_obj_t *args) {
+    zbot_sh1106_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_t fb_args[5] = {
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        n_args > 5 ? args[5] : mp_obj_new_int(1),
+    };
+    zbot_sh1106_fb_call(self, MP_QSTR_rect, 5, fb_args);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_sh1106_rect_obj, 5, 6, zbot_sh1106_rect);
+
+static mp_obj_t zbot_sh1106_fill_rect(size_t n_args, const mp_obj_t *args) {
+    zbot_sh1106_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    mp_obj_t fb_args[5] = { args[1], args[2], args[3], args[4], args[5] };
+    zbot_sh1106_fb_call(self, MP_QSTR_fill_rect, 5, fb_args);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(zbot_sh1106_fill_rect_obj, 6, 6, zbot_sh1106_fill_rect);
+
 static mp_obj_t zbot_sh1106_show(mp_obj_t self_in) {
     zbot_sh1106_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_buffer_info_t bufinfo;
@@ -190,6 +248,12 @@ static MP_DEFINE_CONST_FUN_OBJ_2(zbot_sh1106_invert_obj, zbot_sh1106_invert);
 static const mp_rom_map_elem_t zbot_sh1106_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_fill), MP_ROM_PTR(&zbot_sh1106_fill_obj) },
     { MP_ROM_QSTR(MP_QSTR_text), MP_ROM_PTR(&zbot_sh1106_text_obj) },
+    { MP_ROM_QSTR(MP_QSTR_pixel), MP_ROM_PTR(&zbot_sh1106_pixel_obj) },
+    { MP_ROM_QSTR(MP_QSTR_hline), MP_ROM_PTR(&zbot_sh1106_hline_obj) },
+    { MP_ROM_QSTR(MP_QSTR_vline), MP_ROM_PTR(&zbot_sh1106_vline_obj) },
+    { MP_ROM_QSTR(MP_QSTR_line), MP_ROM_PTR(&zbot_sh1106_line_obj) },
+    { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&zbot_sh1106_rect_obj) },
+    { MP_ROM_QSTR(MP_QSTR_fill_rect), MP_ROM_PTR(&zbot_sh1106_fill_rect_obj) },
     { MP_ROM_QSTR(MP_QSTR_show), MP_ROM_PTR(&zbot_sh1106_show_obj) },
     { MP_ROM_QSTR(MP_QSTR_write_cmd), MP_ROM_PTR(&zbot_sh1106_write_cmd_obj_obj) },
     { MP_ROM_QSTR(MP_QSTR_poweroff), MP_ROM_PTR(&zbot_sh1106_poweroff_obj) },

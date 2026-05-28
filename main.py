@@ -956,11 +956,41 @@ def _boot_oled(api, line1, line2="", line3=""):
         if api.user_display_active():
             return
 
+        if api.get_handle("boot_launch_screen_active", False):
+            return
+
         oled = api.get_handle("oled")
         if oled is not None and getattr(oled, "available", False):
             oled.show_lines(line1, line2, line3)
     except Exception as e:
         error("BOOT_OLED", e)
+
+
+async def _boot_launch_screen_task(api):
+    frame = 0
+    try:
+        api.register_handle("boot_launch_screen_active", True)
+        while api.status.get("boot", {}).get("state") != "complete":
+            try:
+                oled = api.get_handle("oled")
+                if oled is not None and getattr(oled, "available", False):
+                    if not api.user_display_active():
+                        oled.show_zebra_launch_frame(frame)
+                    frame += 1
+            except Exception as e:
+                error("BOOT_LAUNCH_SCREEN_FRAME", e)
+
+            await asyncio.sleep_ms(90)
+    except Exception as e:
+        error("BOOT_LAUNCH_SCREEN", e)
+    finally:
+        api.register_handle("boot_launch_screen_active", False)
+        try:
+            oled = api.get_handle("oled")
+            if oled is not None and getattr(oled, "available", False):
+                oled.clear()
+        except Exception as e:
+            error("BOOT_LAUNCH_SCREEN_CLEAR", e)
 
 
 def _format_tof_line(api):
@@ -1595,7 +1625,12 @@ async def main():
         )
         if oled and oled.available:
             api.register_handle("oled", oled)
-            oled.show_lines("ZebraBot", "Booting...", "OLED online")
+            api.register_handle("boot_launch_screen_active", True)
+            oled.show_zebra_launch_frame(0)
+            api.register_task(
+                "boot_launch_screen",
+                asyncio.create_task(_boot_launch_screen_task(api)),
+            )
             info("BOOT: OLED initialized")
             diag("OLED CH={} ADDR={}".format(OLED_CHANNEL, hex(OLED_ADDR)))
             state("BOOT", "oled_ok")
@@ -1607,6 +1642,7 @@ async def main():
         oled = None
 
     _boot_oled(api, "ZebraBot", "Starting BLE", "")
+    await asyncio.sleep_ms(90)
     try:
         teleop = BleTeleop(
             drive=runtime_drive,
@@ -1648,6 +1684,7 @@ async def main():
         sensor_hub = None
 
     _boot_oled(api, "ZebraBot", "Starting motors", "")
+    await asyncio.sleep_ms(90)
 
     try:
         motor_port_map = dict(MOTOR_PORT_MAP)

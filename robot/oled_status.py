@@ -157,6 +157,41 @@ class OledStatus:
             print("OLED show_lines failed:", e)
             self.available = False
 
+    def show_zebra_launch_frame(self, frame=0):
+        if not self.available:
+            return
+        try:
+            self._select()
+            self.oled.fill(0)
+
+            # Animated diagonal bands with a slow width pulse.
+            phase = int(frame) % 24
+            pulse = phase if phase <= 12 else 24 - phase
+            stripe_w = 3 + (pulse // 4)
+            pitch = 13
+            drift = (int(frame) * 3) % pitch
+
+            if hasattr(self.oled, "hline"):
+                for y in range(self.height):
+                    skew = (y * 2) // 3
+                    start = -pitch + ((drift + skew) % pitch)
+                    for x in range(start, self.width, pitch):
+                        self.oled.hline(x, y, stripe_w, 1)
+
+                if hasattr(self.oled, "rect"):
+                    self.oled.rect(0, 0, self.width, self.height, 1)
+            else:
+                # Compatibility fallback for older native OLED builds that only
+                # expose text drawing.
+                rows = ("//// //// ////", " //// //// ///")
+                for y in range(0, self.height, 10):
+                    self.oled.text(rows[((y // 10) + (frame // 2)) & 1], 0, y, 1)
+
+            self.oled.show()
+        except Exception as e:
+            print("OLED zebra frame failed:", e)
+            self.available = False
+
     async def flash(self, times=4, on_ms=120, off_ms=120):
         if not self.available:
             return
