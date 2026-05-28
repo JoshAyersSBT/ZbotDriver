@@ -144,9 +144,10 @@ use.
 
 ### Documentation
 
-- `docs/student-api.md`: Student-facing `zbot` API guide for motors, servos,
+- `docs/student-api.md`: Student-facing `zbot` API index for motors, servos,
   drive helpers, buttons, sensors, display, notifications, and status snapshots.
-- `docs/sensors.md`: Sensor port, ToF, color, RGB, palette, and snapshot guide.
+- `docs/student-api/*.md`: One student API topic per document, including sensor
+  ports, ToF, color, RGB, palette, and snapshot guide pages.
 - `docs/build-deploy.md`: Firmware build, flash, runtime restore, and native
   module verification workflow.
 - `docs/runtime-architecture.md`: This runtime architecture and file map.
@@ -244,7 +245,7 @@ When adding project-owned files, update this file map and link any new public
 behavior from the nearest user-facing guide:
 
 - student/user behavior belongs in `docs/student-api.md`
-- sensor behavior belongs in `docs/sensors.md`
+- sensor behavior belongs in `docs/student-api/`
 - firmware build/deploy behavior belongs in `docs/build-deploy.md`
 - native module APIs belong in `micropython/cmodules/zbot_drivers/README.md`
 - native user-program workflow belongs in `micropython/cmodules/user_main/README.md`
