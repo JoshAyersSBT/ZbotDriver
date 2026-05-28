@@ -13,7 +13,13 @@
 
 import time
 import uasyncio as asyncio
-from machine import Pin
+
+try:
+    from zbot_button import DebouncedButton
+except ImportError:
+    from machine import Pin
+
+    DebouncedButton = None
 
 
 _DEFAULT_BUTTON_MAP = {
@@ -83,7 +89,7 @@ class NullButton:
         }
 
 
-class DebouncedButton:
+class _PythonDebouncedButton:
     def __init__(
         self,
         button_id,
@@ -203,6 +209,10 @@ class DebouncedButton:
             "active_low": self.active_low,
             "pull": self.pull,
         }
+
+
+if DebouncedButton is None:
+    DebouncedButton = _PythonDebouncedButton
 
 
 class ButtonManager:

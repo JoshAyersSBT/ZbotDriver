@@ -37,6 +37,7 @@ Exposed modules:
 
 - `zbot_motor.Motor`
 - `zbot_servo.Servo`
+- `zbot_button.DebouncedButton`
 - `zbot_tca9548a.TCA9548A`
 - `zbot_mpu6050.MPU6050`
 - `zbot_tcs3472.TCS3472`

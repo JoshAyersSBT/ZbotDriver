@@ -3,6 +3,7 @@ add_library(usermod_zbot_drivers INTERFACE)
 target_sources(usermod_zbot_drivers INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/zbot_motor.c
     ${CMAKE_CURRENT_LIST_DIR}/zbot_servo.c
+    ${CMAKE_CURRENT_LIST_DIR}/zbot_button.c
     ${CMAKE_CURRENT_LIST_DIR}/zbot_tca9548a.c
     ${CMAKE_CURRENT_LIST_DIR}/zbot_mpu6050.c
     ${CMAKE_CURRENT_LIST_DIR}/zbot_tcs3472.c
