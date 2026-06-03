@@ -4,59 +4,10 @@ from machine import I2C, Pin
 
 PREACTIVE_BLE = None
 
-try:
-    import builtins
-    PREACTIVE_BLE = getattr(builtins, "_zbot_preactive_ble", None)
-except Exception:
-    PREACTIVE_BLE = None
-
-if PREACTIVE_BLE is None:
-    try:
-        import bluetooth
-        import gc
-
-        _early_ble = bluetooth.BLE()
-        if _early_ble.active():
-            PREACTIVE_BLE = _early_ble
-            print("[INFO] BOOT: using active BLE controller")
-        else:
-            for _early_ble_attempt in range(1, 4):
-                try:
-                    try:
-                        _early_ble.active(False)
-                    except Exception:
-                        pass
-                    gc.collect()
-                    time.sleep_ms(250 * _early_ble_attempt)
-                    _early_ble.active(True)
-                    PREACTIVE_BLE = _early_ble
-                    print("[INFO] BOOT: BLE controller preactivated early")
-                    break
-                except Exception as _early_ble_err:
-                    print("[ERR] BLE_EARLY_PREACTIVE_{} {}".format(_early_ble_attempt, repr(_early_ble_err)))
-                    time.sleep_ms(400 * _early_ble_attempt)
-    except Exception as _early_ble_import_err:
-        print("[ERR] BLE_EARLY_PREIMPORT {}".format(repr(_early_ble_import_err)))
-else:
-    print("[INFO] BOOT: using boot.py BLE controller")
-
-try:
-    import bluetooth
-except Exception:
-    bluetooth = None
-
 import robot.config as robot_config
 
 from robot.motors import Motor
 from robot.servo import Servo
-from robot.ble_teleop import BleTeleop
-from robot.mpu6050 import MPU6050
-from robot.oled_status import OledStatus
-from robot.tca9548a import TCA9548A
-from robot.sensor_hub import SensorHub
-from robot.motor_feedback import MotorFeedback
-from robot.motor_scan import MotorScanner
-from robot.button import ButtonManager
 from robot.debug_io import (
     info,
     warn,
@@ -1330,6 +1281,8 @@ async def _deferred_ble_start_task(api, drive, steering, imu, oled):
 
         try:
             info("BOOT: deferred BLE init attempt {}".format(attempt))
+            from robot.ble_teleop import BleTeleop
+
             teleop = BleTeleop(
                 drive=drive,
                 steering=steering,
@@ -1646,6 +1599,8 @@ async def main():
         error("USER_TASK_START", e)
 
     try:
+        from robot.button import ButtonManager
+
         button_manager = ButtonManager(
             api=api,
             button_map=BUTTON_MAP,
@@ -1666,6 +1621,8 @@ async def main():
         state("BOOT", "buttons_failed")
 
     try:
+        from robot.tca9548a import TCA9548A
+
         base_i2c = I2C(
             TCA_I2C_ID,
             sda=Pin(TCA_SDA_GPIO),
@@ -1698,6 +1655,8 @@ async def main():
         error("TCA_INIT", e)
 
     try:
+        from robot.mpu6050 import MPU6050
+
         imu = MPU6050(
             i2c_id=TCA_I2C_ID,
             sda_gpio=TCA_SDA_GPIO,
@@ -1717,6 +1676,8 @@ async def main():
         warn("BOOT: MPU unavailable")
 
     try:
+        from robot.oled_status import OledStatus
+
         oled = OledStatus(
             i2c_id=TCA_I2C_ID,
             sda_gpio=TCA_SDA_GPIO,
@@ -1742,6 +1703,8 @@ async def main():
 
     _boot_oled(api, "ZebraBot", "Starting BLE", "")
     try:
+        from robot.ble_teleop import BleTeleop
+
         teleop = BleTeleop(
             drive=runtime_drive,
             steering=steer,
@@ -1763,6 +1726,8 @@ async def main():
         state("BOOT", "ble_deferred")
 
     try:
+        from robot.sensor_hub import SensorHub
+
         notify_fn = teleop.notify_line if teleop is not None else None
         sensor_hub = SensorHub(
             i2c_id=TCA_I2C_ID,
@@ -1784,6 +1749,9 @@ async def main():
     _boot_oled(api, "ZebraBot", "Starting motors", "")
 
     try:
+        from robot.motor_feedback import MotorFeedback
+        from robot.motor_scan import MotorScanner
+
         motor_port_map = dict(MOTOR_PORT_MAP)
         motor_feedback = MotorFeedback(motor_port_map)
         motor_scanner = MotorScanner(
@@ -1919,36 +1887,6 @@ def _safe_mode_requested():
         return False
 
 
-def _preactivate_ble_controller():
-    try:
-        import bluetooth
-        import gc
-    except Exception as e:
-        error("BLE_PREIMPORT", e)
-        return None
-
-    ble = bluetooth.BLE()
-    for attempt in range(1, 4):
-        try:
-            try:
-                ble.active(False)
-            except Exception:
-                pass
-            gc.collect()
-            time.sleep_ms(250 * attempt)
-            ble.active(True)
-            info("BOOT: BLE controller preactivated")
-            state("BOOT", "ble_controller_active")
-            return ble
-        except Exception as e:
-            error("BLE_PREACTIVE_{}".format(attempt), e)
-            time.sleep_ms(400 * attempt)
-
-    warn("BOOT: BLE controller preactivation failed")
-    state("BOOT", "ble_controller_failed")
-    return None
-
-
 def boot():
     global PREACTIVE_BLE
 
@@ -1969,8 +1907,6 @@ def boot():
         print("BOOT: launch in {}...".format(remaining))
         time.sleep(1)
 
-    if PREACTIVE_BLE is None:
-        PREACTIVE_BLE = _preactivate_ble_controller()
     asyncio.run(main())
 
 
