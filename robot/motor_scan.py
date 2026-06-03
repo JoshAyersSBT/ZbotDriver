@@ -9,7 +9,8 @@ class MotorScanner:
                  ports=(1, 2, 3, 4),
                  scan_power=25,
                  pulse_ms=250,
-                 period_ms=1500):
+                 period_ms=1500,
+                 max_duty_u16=40000):
 
         # motors should be a dict {1:m1,2:m2,3:m3,4:m4}
         self.motors = motors
@@ -20,6 +21,7 @@ class MotorScanner:
         self.scan_power = int(scan_power)
         self.pulse_ms = int(pulse_ms)
         self.period_ms = int(period_ms)
+        self.max_duty_u16 = int(max_duty_u16)
 
         self.enabled = False
 
@@ -34,6 +36,8 @@ class MotorScanner:
         Pulse a motor briefly and measure encoder ticks
         """
 
+        motor = None
+
         try:
 
             motor = self.motors.get(port)
@@ -44,13 +48,11 @@ class MotorScanner:
 
             self.feedback.reset(port)
 
-            duty = (self.scan_power * motor.max_duty) // 100
+            duty = (self.scan_power * self.max_duty_u16) // 100
 
             motor.set(True, duty)
 
             await asyncio.sleep_ms(self.pulse_ms)
-
-            motor.set(True, 0)
 
             ticks = self.feedback.get(port)
 
@@ -65,6 +67,15 @@ class MotorScanner:
         except Exception as e:
             error("MTR_SCAN_{}".format(port), e)
             self._notify("MTR_ERR {} scan_failed".format(port))
+        finally:
+            if motor is not None:
+                try:
+                    if hasattr(motor, "stop"):
+                        motor.stop()
+                    else:
+                        motor.set(True, 0)
+                except Exception as stop_err:
+                    error("MTR_SCAN_STOP_{}".format(port), stop_err)
 
     async def task(self):
 

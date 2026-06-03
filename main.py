@@ -116,6 +116,7 @@ SENSOR_PORT_MODES = _cfg("SENSOR_PORT_MODES", {})
 
 MOTOR_PORT_MAP = _cfg("MOTOR_PORT_MAP", {})
 ACTIVE_MOTOR_PORTS = _cfg("ACTIVE_MOTOR_PORTS", tuple(sorted(MOTOR_PORT_MAP.keys())))
+DRIVE_MOTOR_PORTS = _cfg("DRIVE_MOTOR_PORTS", ACTIVE_MOTOR_PORTS)
 
 MOTOR_SCAN_POWER = _cfg("MOTOR_SCAN_POWER", 25)
 MOTOR_SCAN_PULSE_MS = _cfg("MOTOR_SCAN_PULSE_MS", 250)
@@ -945,6 +946,75 @@ def get_zbot():
     return zbot
 
 
+def _emergency_stop_motors(api, reason="UNHANDLED_ERROR", exc=None):
+    try:
+        if api is None:
+            return False
+
+        stopped = False
+        motors = api.handles.get("motors", {})
+        for port, motor in motors.items():
+            try:
+                if hasattr(motor, "stop"):
+                    motor.stop()
+                else:
+                    motor.set(True, 0)
+
+                api.status["motors"][port] = {
+                    "power": 0,
+                    "duty_u16": 0,
+                    "ts_ms": time.ticks_ms(),
+                    "name": api.get_motor_map().get(port, {}).get("name", "M{}".format(port)),
+                    "stop_reason": str(reason),
+                }
+                stopped = True
+            except Exception as stop_err:
+                error("EMERGENCY_STOP_{}".format(port), stop_err)
+
+        if stopped:
+            api.status["system"]["last_stop_reason"] = str(reason)
+            teleop = api.get_handle("teleop")
+            if teleop is not None:
+                try:
+                    teleop.notify_line("ERR MOTORS_STOPPED {}".format(reason))
+                except Exception:
+                    pass
+        return stopped
+    except Exception as stop_outer:
+        try:
+            error("EMERGENCY_STOP", stop_outer)
+        except Exception:
+            pass
+        return False
+
+
+async def _guarded_task(api, name, coro):
+    try:
+        await coro
+    except Exception as e:
+        _emergency_stop_motors(api, "TASK_{}".format(name), e)
+        error("TASK_{}".format(name), e)
+        try:
+            api.status["services"]["task_error"] = {
+                "name": str(name),
+                "error": repr(e),
+                "ts_ms": time.ticks_ms(),
+            }
+        except Exception:
+            pass
+
+        teleop = api.get_handle("teleop") if api is not None else None
+        if teleop is not None:
+            try:
+                teleop.notify_error("TASK_{}".format(name), e)
+            except Exception:
+                pass
+
+
+def _create_guarded_task(api, name, coro):
+    return asyncio.create_task(_guarded_task(api, name, coro))
+
+
 def _boot_oled(api, line1, line2="", line3=""):
     try:
         if api is None:
@@ -1206,7 +1276,7 @@ def _attach_ble_teleop(api, teleop, imu=None, start_imu=True):
         imu_task_fn = getattr(teleop, "imu_task", None)
         if imu_task_fn is not None:
             try:
-                api.register_task("imu", asyncio.create_task(imu_task_fn()))
+                api.register_task("imu", _create_guarded_task(api, "imu", imu_task_fn()))
                 api.register_handle("teleop_imu_task_started", True)
                 info("BOOT: IMU task started")
                 state("TASK", "imu_started")
@@ -1363,6 +1433,7 @@ async def _run_user_program(api):
 
     except Exception as e:
         api.status["user"]["last_error"] = repr(e)
+        _emergency_stop_motors(api, "USER_MAIN", e)
         error("USER_MAIN", e)
 
         if teleop is not None:
@@ -1506,7 +1577,7 @@ async def main():
         raise
 
     try:
-        runtime_drive = RuntimeDriveBridge(api, propulsion_ports=ACTIVE_MOTOR_PORTS)
+        runtime_drive = RuntimeDriveBridge(api, propulsion_ports=DRIVE_MOTOR_PORTS)
         api.register_handle("runtime_drive", runtime_drive)
     except Exception as e:
         error("RUNTIME_DRIVE_INIT", e)
@@ -1660,6 +1731,7 @@ async def main():
             scan_power=MOTOR_SCAN_POWER,
             pulse_ms=MOTOR_SCAN_PULSE_MS,
             period_ms=MOTOR_SCAN_PERIOD_MS,
+            max_duty_u16=MOTOR_MAX_DUTY_U16,
         )
 
         api.register_handle("motor_feedback", motor_feedback)
@@ -1683,7 +1755,7 @@ async def main():
         try:
             api.register_task(
                 "ble_deferred",
-                asyncio.create_task(_deferred_ble_start_task(api, runtime_drive, steer, imu, oled)),
+                _create_guarded_task(api, "ble_deferred", _deferred_ble_start_task(api, runtime_drive, steer, imu, oled)),
             )
             info("BOOT: deferred BLE task scheduled")
             state("TASK", "ble_deferred_started")
@@ -1699,7 +1771,7 @@ async def main():
 
     if sensor_hub is not None:
         try:
-            api.register_task("sensor_hub", asyncio.create_task(sensor_hub.task()))
+            api.register_task("sensor_hub", _create_guarded_task(api, "sensor_hub", sensor_hub.task()))
             info("BOOT: SensorHub task started")
             state("TASK", "sensorhub_started")
         except Exception as e:
@@ -1720,7 +1792,7 @@ async def main():
     if motor_scanner is not None:
         if ENABLE_ACTIVE_MOTOR_SCAN:
             try:
-                api.register_task("motor_scan", asyncio.create_task(motor_scanner.task()))
+                api.register_task("motor_scan", _create_guarded_task(api, "motor_scan", motor_scanner.task()))
                 info("BOOT: MotorScanner task started")
                 state("TASK", "motor_scan_started")
             except Exception as e:
@@ -1731,8 +1803,10 @@ async def main():
         try:
             api.register_task(
                 "motor_feedback",
-                asyncio.create_task(
-                    motor_scanner.feedback_task(period_ms=MOTOR_FEEDBACK_PERIOD_MS)
+                _create_guarded_task(
+                    api,
+                    "motor_feedback",
+                    motor_scanner.feedback_task(period_ms=MOTOR_FEEDBACK_PERIOD_MS),
                 ),
             )
             info("BOOT: Motor feedback task started")
@@ -1744,26 +1818,26 @@ async def main():
 
     if button_manager is not None:
         try:
-            api.register_task("buttons", asyncio.create_task(button_manager.task()))
+            api.register_task("buttons", _create_guarded_task(api, "buttons", button_manager.task()))
             info("BOOT: Button task started")
             state("TASK", "buttons_started")
         except Exception as e:
             error("BUTTON_TASK", e)
 
     try:
-        api.register_task("api_housekeeping", asyncio.create_task(_api_housekeeping_task(api)))
+        api.register_task("api_housekeeping", _create_guarded_task(api, "api_housekeeping", _api_housekeeping_task(api)))
     except Exception as e:
         error("API_HOUSEKEEPING", e)
 
     try:
-        api.register_task("oled_status", asyncio.create_task(_oled_status_task(api)))
+        api.register_task("oled_status", _create_guarded_task(api, "oled_status", _oled_status_task(api)))
         info("BOOT: OLED status task started")
         state("TASK", "oled_status_started")
     except Exception as e:
         error("OLED_STATUS_START", e)
 
     try:
-        api.register_task("user_main", asyncio.create_task(_run_user_program(api)))
+        api.register_task("user_main", _create_guarded_task(api, "user_main", _run_user_program(api)))
         info("BOOT: user_main task started")
         state("TASK", "user_main_started")
     except Exception as e:
@@ -1841,5 +1915,9 @@ def boot():
 
 try:
     boot()
+except Exception as e:
+    _emergency_stop_motors(API, "BOOT_UNHANDLED", e)
+    error("BOOT_UNHANDLED", e)
+    raise
 finally:
     asyncio.new_event_loop()
