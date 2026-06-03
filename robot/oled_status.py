@@ -103,6 +103,7 @@ class OledStatus:
         self.mux_channel = mux_channel
         self.freq = freq
         self._flash_task = None
+        self.found_devices = []
 
         self.i2c = None
         self.oled = None
@@ -110,12 +111,18 @@ class OledStatus:
         try:
             self.i2c = I2C(i2c_id, sda=Pin(sda_gpio), scl=Pin(scl_gpio), freq=freq)
 
-            self._select()
-            time.sleep_ms(20)
+            found = self._scan_selected()
+            if addr not in found and self.mux is not None:
+                detected = self._find_mux_channel(addr)
+                if detected is not None:
+                    self.mux_channel = detected
+                    found = self._scan_selected()
 
-            found = self.i2c.scan()
             if addr not in found:
-                print("OLED not found on selected bus/channel. scan =", [hex(x) for x in found])
+                print(
+                    "OLED not found. channel=%s scan=%s"
+                    % (str(self.mux_channel), [hex(x) for x in found])
+                )
                 return
 
             self.oled = SH1106_I2C(width, height, self.i2c, addr=addr)
@@ -128,6 +135,34 @@ class OledStatus:
     def _select(self):
         if self.mux is not None and self.mux_channel is not None:
             self.mux.select(self.mux_channel)
+
+    def _scan_selected(self):
+        self._select()
+        time.sleep_ms(20)
+        found = self.i2c.scan()
+        self.found_devices = list(found)
+        print(
+            "OLED scan channel=%s devices=%s"
+            % (str(self.mux_channel), [hex(x) for x in found])
+        )
+        return found
+
+    def _find_mux_channel(self, addr):
+        for channel in range(8):
+            try:
+                self.mux.select(channel)
+                time.sleep_ms(20)
+                found = self.i2c.scan()
+                print(
+                    "OLED scan channel=%s devices=%s"
+                    % (str(channel), [hex(x) for x in found])
+                )
+                if addr in found:
+                    print("OLED found on mux channel %s" % str(channel))
+                    return channel
+            except Exception as e:
+                print("OLED scan channel %s failed: %s" % (str(channel), repr(e)))
+        return None
 
     def clear(self):
         if not self.available:

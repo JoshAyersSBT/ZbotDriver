@@ -1041,6 +1041,17 @@ def _create_guarded_task(api, name, coro):
     return asyncio.create_task(_guarded_task(api, name, coro))
 
 
+def _start_user_main_task(api):
+    if api is None:
+        return False
+    if api.tasks.get("user_main") is not None:
+        return False
+    api.register_task("user_main", _create_guarded_task(api, "user_main", _run_user_program(api)))
+    info("BOOT: user_main task started")
+    state("TASK", "user_main_started")
+    return True
+
+
 def _boot_oled(api, line1, line2="", line3=""):
     try:
         if api is None:
@@ -1629,6 +1640,12 @@ async def main():
         error("RUNTIME_DRIVE_INIT", e)
 
     try:
+        _start_user_main_task(api)
+        await asyncio.sleep_ms(0)
+    except Exception as e:
+        error("USER_TASK_START", e)
+
+    try:
         button_manager = ButtonManager(
             api=api,
             button_map=BUTTON_MAP,
@@ -1883,9 +1900,7 @@ async def main():
         error("OLED_STATUS_START", e)
 
     try:
-        api.register_task("user_main", _create_guarded_task(api, "user_main", _run_user_program(api)))
-        info("BOOT: user_main task started")
-        state("TASK", "user_main_started")
+        _start_user_main_task(api)
     except Exception as e:
         error("USER_TASK_START", e)
 
