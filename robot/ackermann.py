@@ -237,7 +237,7 @@ class AckermannDrive:
     def steer(self, angle):
         angle = self._clamp_angle(angle)
         self._last_angle = angle
-        self.zbot.api.set_steering(angle)
+        self.zbot.api.set_servo(self.steering_port, angle)
         return angle
 
     def steer_center(self):

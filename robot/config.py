@@ -103,8 +103,8 @@ SERVO_MIN_US = 500
 SERVO_MAX_US = 2500
 SERVO_CENTER_DEG = 90
 
-# Motor ports and servo ports are the same physical actuator ports.
-# This is a hardware capability map, not a user robot layout.
+# Motor and servo ports are the same four physical actuator ports.
+# Runtime code switches a port into motor mode or servo mode when it is used.
 SERVO_PORT_MAP = {
     port: {
         "name": "{}_SERVO".format(cfg["name"]),
@@ -118,9 +118,9 @@ SERVO_PORT_MAP = {
     for port, cfg in MOTOR_PORT_MAP.items()
 }
 
-# Legacy fallback only.
-# User code should call zbot.servo(port) directly.
-STEER_SERVO_PORT = 1
+# Default Ackermann steering port.
+STEER_SERVO_PORT = 4
+SERVO_PORT_MAP[STEER_SERVO_PORT]["role"] = "steering"
 STEER_SERVO_GPIO = SERVO_PORT_MAP[STEER_SERVO_PORT]["gpio"]
 
 # ============================================================

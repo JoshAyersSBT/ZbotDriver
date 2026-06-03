@@ -86,7 +86,7 @@ BUTTON_DEFAULT_ACTIVE_LOW = _cfg("BUTTON_DEFAULT_ACTIVE_LOW", False)
 
 # Optional future-facing config. Falls back cleanly to the legacy dedicated steer servo.
 SERVO_PORT_MAP = _cfg("SERVO_PORT_MAP", None)
-STEER_SERVO_PORT = _cfg("STEER_SERVO_PORT", 1)
+STEER_SERVO_PORT = _cfg("STEER_SERVO_PORT", 4)
 
 
 def _build_default_servo_port_map():
@@ -105,31 +105,6 @@ def _build_default_servo_port_map():
 
 if SERVO_PORT_MAP is None:
     SERVO_PORT_MAP = _build_default_servo_port_map()
-
-
-def _motor_pwm_gpios():
-    pins = set()
-    for cfg in MOTOR_PORT_MAP.values():
-        try:
-            pins.add(int(cfg.get("pwm")))
-        except Exception:
-            pass
-    return pins
-
-
-def _safe_servo_port_map():
-    motor_pwm_pins = _motor_pwm_gpios()
-    safe = {}
-    for port, cfg in SERVO_PORT_MAP.items():
-        try:
-            gpio = int(cfg.get("gpio", STEER_SERVO_GPIO))
-        except Exception:
-            gpio = int(STEER_SERVO_GPIO)
-        if gpio in motor_pwm_pins:
-            warn("BOOT: skipping servo port {} on motor PWM GPIO{}".format(port, gpio))
-            continue
-        safe[int(port)] = cfg
-    return safe
 
 
 def _clamp(x, lo, hi):
@@ -291,11 +266,54 @@ class RobotAPI:
             mag = 100
         return (mag * MOTOR_MAX_DUTY_U16) // 100
 
-    def set_motor(self, port, power):
+    def _ensure_motor(self, port):
+        port = int(port)
         motors = self.handles.get("motors", {})
         motor = motors.get(port)
-        if motor is None:
+        if motor is not None:
+            return motor
+
+        cfg = self.get_motor_map().get(port)
+        if cfg is None:
             raise ValueError("unknown motor port {}".format(port))
+
+        servos = self.handles.get("servos", {})
+        servo = servos.pop(port, None)
+        if servo is not None:
+            try:
+                if hasattr(servo, "deinit"):
+                    servo.deinit()
+            except Exception as e:
+                error("MOTOR_PORT_SERVO_DEINIT_{}".format(port), e)
+
+        motor = Motor(
+            cfg["pwm"],
+            cfg["dir"],
+            pwm_freq_hz=MOTOR_PWM_FREQ_HZ,
+            invert_pwm=bool(cfg.get("invert_pwm", MOTOR_INVERT_PWM)),
+        )
+        motors[port] = motor
+        self.status["motors"][port] = {
+            "power": 0,
+            "duty_u16": 0,
+            "ts_ms": time.ticks_ms(),
+            "name": cfg.get("name", "M{}".format(port)),
+            "mode": "motor",
+        }
+        diag(
+            "MOTOR_PORT {} {} pwm={} dir={} enc={} mode=motor".format(
+                port,
+                cfg.get("name", "M{}".format(port)),
+                cfg.get("pwm"),
+                cfg.get("dir"),
+                cfg.get("enc"),
+            )
+        )
+        return motor
+
+    def set_motor(self, port, power):
+        port = int(port)
+        motor = self._ensure_motor(port)
 
         power = int(power)
 
@@ -317,13 +335,23 @@ class RobotAPI:
             "duty_u16": self._power_to_duty(power),
             "ts_ms": time.ticks_ms(),
             "name": self.get_motor_map().get(port, {}).get("name", "M{}".format(port)),
+            "mode": "motor",
         }
         return self.status["motors"][port]
 
     def stop_motor(self, port):
         motors = self.handles.get("motors", {})
+        port = int(port)
         motor = motors.get(port)
         if motor is None:
+            if port in self.get_servo_map():
+                return self.status["motors"].get(port, {
+                    "power": 0,
+                    "duty_u16": 0,
+                    "ts_ms": time.ticks_ms(),
+                    "name": self.get_motor_map().get(port, {}).get("name", "M{}".format(port)),
+                    "mode": "servo",
+                })
             raise ValueError("unknown motor port {}".format(port))
 
         if hasattr(motor, "stop"):
@@ -336,6 +364,7 @@ class RobotAPI:
             "duty_u16": 0,
             "ts_ms": time.ticks_ms(),
             "name": self.get_motor_map().get(port, {}).get("name", "M{}".format(port)),
+            "mode": "motor",
         }
         return self.status["motors"][port]
 
@@ -347,11 +376,66 @@ class RobotAPI:
             except Exception as e:
                 error("STOP_MOTOR_{}".format(port), e)
 
-    def set_servo(self, port, angle):
+    def _ensure_servo(self, port):
+        port = int(port)
         servos = self.handles.get("servos", {})
-        servo = servos.get(int(port))
-        if servo is None:
+        servo = servos.get(port)
+        if servo is not None:
+            return servo
+
+        cfg = self.get_servo_map().get(port)
+        if cfg is None:
             raise ValueError("unknown servo port {}".format(port))
+
+        motors = self.handles.get("motors", {})
+        motor = motors.pop(port, None)
+        if motor is not None:
+            try:
+                if hasattr(motor, "stop"):
+                    motor.stop()
+            except Exception as e:
+                error("SERVO_PORT_STOP_{}".format(port), e)
+            try:
+                if hasattr(motor, "deinit"):
+                    motor.deinit()
+            except Exception as e:
+                error("SERVO_PORT_DEINIT_{}".format(port), e)
+            self.status["motors"][port] = {
+                "power": 0,
+                "duty_u16": 0,
+                "ts_ms": time.ticks_ms(),
+                "name": self.get_motor_map().get(port, {}).get("name", "M{}".format(port)),
+                "mode": "servo",
+            }
+
+        servo = Servo(
+            int(cfg.get("gpio", STEER_SERVO_GPIO)),
+            freq_hz=int(cfg.get("freq_hz", SERVO_FREQ_HZ)),
+            min_us=int(cfg.get("min_us", SERVO_MIN_US)),
+            max_us=int(cfg.get("max_us", SERVO_MAX_US)),
+        )
+        servos[port] = servo
+        self.status["servos"][port] = {
+            "angle": None,
+            "ts_ms": time.ticks_ms(),
+            "name": cfg.get("name", "S{}".format(port)),
+            "mode": "servo",
+        }
+        diag(
+            "SERVO_PORT {} {} gpio={} freq={} min_us={} max_us={}".format(
+                port,
+                cfg.get("name", "S{}".format(port)),
+                cfg.get("gpio", STEER_SERVO_GPIO),
+                cfg.get("freq_hz", SERVO_FREQ_HZ),
+                cfg.get("min_us", SERVO_MIN_US),
+                cfg.get("max_us", SERVO_MAX_US),
+            )
+        )
+        return servo
+
+    def set_servo(self, port, angle):
+        port = int(port)
+        servo = self._ensure_servo(port)
 
         angle = int(angle)
 
@@ -362,13 +446,14 @@ class RobotAPI:
         else:
             raise AttributeError("servo object has no write_angle/angle")
 
-        cfg = self.get_servo_map().get(int(port), {})
+        cfg = self.get_servo_map().get(port, {})
         item = {
             "angle": angle,
             "ts_ms": time.ticks_ms(),
             "name": cfg.get("name", "S{}".format(port)),
+            "mode": "servo",
         }
-        self.status["servos"][int(port)] = item
+        self.status["servos"][port] = item
         return item
 
     def center_servo(self, port):
@@ -379,7 +464,10 @@ class RobotAPI:
     def set_steering(self, angle):
         steer = self.handles.get("steer")
         if steer is None:
-            raise RuntimeError("steering unavailable")
+            steer_port = int(self.handles.get("steer_port", STEER_SERVO_PORT))
+            steer = self._ensure_servo(steer_port)
+            self.register_handle("steer", steer)
+            self.register_handle("steer_port", steer_port)
 
         angle = int(angle)
         if hasattr(steer, "write_angle"):
@@ -1509,75 +1597,37 @@ async def main():
         raise
 
     try:
-        safe_servo_map = _safe_servo_port_map()
+        api.register_handle("servos", servos)
+        api.register_handle("servo_port_map", dict(SERVO_PORT_MAP))
 
-        if not safe_servo_map:
-            api.register_handle("servos", servos)
-            api.register_handle("servo_port_map", {})
-            api.status["steering"] = {"angle": None, "ts_ms": time.ticks_ms(), "available": False}
-            warn("BOOT: servo init skipped; configured servo GPIOs overlap motor PWM pins")
-            state("BOOT", "servo_skipped")
-        else:
-            for port in sorted(safe_servo_map.keys()):
-                cfg = safe_servo_map[port]
-                servos[port] = Servo(
-                    int(cfg.get("gpio", STEER_SERVO_GPIO)),
-                    freq_hz=int(cfg.get("freq_hz", SERVO_FREQ_HZ)),
-                    min_us=int(cfg.get("min_us", SERVO_MIN_US)),
-                    max_us=int(cfg.get("max_us", SERVO_MAX_US)),
-                )
-                api.status["servos"][port] = {
-                    "angle": None,
-                    "ts_ms": time.ticks_ms(),
-                    "name": cfg.get("name", "S{}".format(port)),
-                }
-                diag(
-                    "SERVO_PORT {} {} gpio={} freq={} min_us={} max_us={}".format(
-                        port,
-                        cfg.get("name", "S{}".format(port)),
-                        cfg.get("gpio", STEER_SERVO_GPIO),
-                        cfg.get("freq_hz", SERVO_FREQ_HZ),
-                        cfg.get("min_us", SERVO_MIN_US),
-                        cfg.get("max_us", SERVO_MAX_US),
-                    )
-                )
+        steer_port = None
+        for port, cfg in SERVO_PORT_MAP.items():
+            if str(cfg.get("role", "")).lower() == "steering":
+                steer_port = int(port)
+                break
+        if steer_port is None:
+            steer_port = int(STEER_SERVO_PORT)
 
-            api.register_handle("servos", servos)
-            api.register_handle("servo_port_map", dict(safe_servo_map))
+        api.register_handle("steer_port", int(steer_port))
+        api.status["steering"] = {"angle": None, "ts_ms": time.ticks_ms(), "available": True}
+        info("BOOT: servo ports registered")
+        state("BOOT", "servo_ports_ok")
 
-            steer_port = None
-            for port, cfg in safe_servo_map.items():
-                if str(cfg.get("role", "")).lower() == "steering":
-                    steer_port = int(port)
-                    break
-            if steer_port is None and servos:
-                steer_port = sorted(servos.keys())[0]
-
-            if steer_port is None:
-                raise RuntimeError("no servo ports available")
-
-            steer = servos[steer_port]
+        try:
+            steer = api._ensure_servo(steer_port)
             api.register_handle("steer", steer)
-            api.register_handle("steer_port", int(steer_port))
-            api.status["steering"] = {"angle": None, "ts_ms": time.ticks_ms(), "available": True}
-            info("BOOT: servo(s) initialized")
-            state("BOOT", "servo_ok")
-
-            try:
-                api.center_servo(steer_port)
-                api.status["steering"] = {
-                    "angle": int(safe_servo_map.get(steer_port, {}).get("center_deg", SERVO_CENTER_DEG)),
-                    "ts_ms": time.ticks_ms(),
-                    "available": True,
-                }
-            except Exception as center_err:
-                error("SERVO_CENTER_INIT", center_err)
-
-        api.stop_all()
+            api.center_servo(steer_port)
+            api.status["steering"] = {
+                "angle": int(SERVO_PORT_MAP.get(steer_port, {}).get("center_deg", SERVO_CENTER_DEG)),
+                "ts_ms": time.ticks_ms(),
+                "available": True,
+            }
+        except Exception as center_err:
+            error("SERVO_CENTER_INIT", center_err)
+            warn("BOOT: steering servo will remain lazy until first use")
 
     except Exception as e:
         error("SERVO_INIT", e)
-        _emergency_stop_motors(api, "SERVO_INIT", e)
         warn("BOOT: continuing without servos")
         servos = {}
         steer = None
