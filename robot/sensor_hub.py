@@ -1,5 +1,6 @@
 from machine import I2C, Pin
 import uasyncio as asyncio
+import gc
 from robot.debug_io import info, error
 
 from robot import vl53l1x
@@ -536,6 +537,13 @@ class SensorHub:
     async def task(self):
         info("SensorHub task started")
         while True:
+            try:
+                if gc.mem_free() < 12000:
+                    await asyncio.sleep_ms(max(self.scan_period_ms, 10000))
+                    continue
+            except Exception:
+                pass
+
             for port in range(1, 7):
                 mode = self.port_modes.get(port, "none")
                 if mode == "none":
@@ -546,6 +554,10 @@ class SensorHub:
                         self._poll_port(port)
                     else:
                         self._notify("SNS_ERR {} bad_mode {}".format(port, mode))
+                except MemoryError as e:
+                    error("SNS_LOW_MEM", e)
+                    await asyncio.sleep_ms(max(self.scan_period_ms, 15000))
+                    break
                 except Exception as e:
                     error("SNS_PORT_{}".format(port), e)
                     self._notify("SNS_ERR {} exception".format(port))

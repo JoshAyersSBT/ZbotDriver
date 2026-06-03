@@ -1275,7 +1275,7 @@ def _attach_ble_teleop(api, teleop, imu=None, start_imu=True):
 async def _deferred_ble_start_task(api, drive, steering, imu, oled):
     await asyncio.sleep_ms(3000)
 
-    for attempt in range(1, 9):
+    for attempt in range(1, 3):
         if api.get_handle("teleop") is not None:
             return
 
@@ -1297,7 +1297,7 @@ async def _deferred_ble_start_task(api, drive, steering, imu, oled):
         except Exception as e:
             error("BLE_DEFERRED_INIT", e)
             state("BOOT", "ble_retry_{}".format(attempt))
-            await asyncio.sleep_ms(2500)
+            await asyncio.sleep_ms(5000)
 
     warn("BOOT: deferred BLE init exhausted")
     state("BOOT", "ble_failed")
