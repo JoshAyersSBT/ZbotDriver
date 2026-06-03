@@ -24,9 +24,10 @@ or C.
 
 ## Wi-Fi Code Upload
 
-The runtime starts a small HTTP upload service when `WIFI_CODE_ENABLED` is true
-in `robot/config.py`. By default the robot creates the `ZebraBot-Code` access
-point and listens at `http://192.168.4.1:8080`.
+The Wi-Fi upload module provides a small HTTP upload service. Its settings live
+in `robot/wifi_config.py` so the normal robot boot path stays small. By default
+the service creates the `ZebraBot-Code` access point and listens at
+`http://192.168.4.1:8080` when started.
 
 Upload from a browser by opening the robot URL, or from this repo with:
 
@@ -35,7 +36,8 @@ python tools\wifi_put.py http://192.168.4.1:8080 user_main.py --reset
 ```
 
 To join a normal router instead, set `WIFI_STA_SSID` and
-`WIFI_STA_PASSWORD` in `robot/config.py`. The AP can stay enabled as a fallback.
+`WIFI_STA_PASSWORD` in `robot/wifi_config.py`. The AP can stay enabled as a
+fallback.
 
 Run the serial-side Wi-Fi module tests on a board attached to COM7 with:
 

@@ -41,6 +41,7 @@ def deploy(args):
         ("main.py", ":main.py"),
         ("boot.py", ":boot.py"),
         ("robot/config.py", ":robot/config.py"),
+        ("robot/wifi_config.py", ":robot/wifi_config.py"),
         ("robot/wifi_code.py", ":robot/wifi_code.py"),
         ("robot/debug_io.py", ":robot/debug_io.py"),
         ("robot/error_report.py", ":robot/error_report.py"),

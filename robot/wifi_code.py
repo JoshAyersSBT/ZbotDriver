@@ -438,3 +438,33 @@ async def main(zbot):
 </body>
 </html>
 """.format(urls=self.urls(), token_input=token_input)
+
+
+async def start_wifi_code_from_config(api, oled, notify_fn, config, state_fn, error_fn):
+    port = getattr(config, "WIFI_CODE_PORT", 8080)
+    try:
+        server = WifiCodeServer(
+            port=port,
+            sta_ssid=getattr(config, "WIFI_STA_SSID", ""),
+            sta_password=getattr(config, "WIFI_STA_PASSWORD", ""),
+            sta_timeout_ms=getattr(config, "WIFI_STA_TIMEOUT_MS", 12000),
+            ap_enabled=getattr(config, "WIFI_AP_ENABLED", True),
+            ap_ssid=getattr(config, "WIFI_AP_SSID", "ZebraBot-Code"),
+            ap_password=getattr(config, "WIFI_AP_PASSWORD", "zebrabot1"),
+            token=getattr(config, "WIFI_CODE_TOKEN", ""),
+            notify=notify_fn,
+            oled=oled,
+        )
+        await server.start()
+        api.register_handle("wifi_code", server)
+        state_fn("BOOT", "wifi_code_ok")
+        if oled is not None and getattr(oled, "available", False):
+            try:
+                first = server.addresses[0][1] if server.addresses else ""
+                oled.show_lines("ZebraBot WiFi", first, "port {}".format(port))
+                await asyncio.sleep_ms(1200)
+            except Exception as e:
+                error_fn("WIFI_CODE_OLED", e)
+    except Exception as e:
+        error_fn("WIFI_CODE_START", e)
+        state_fn("BOOT", "wifi_code_failed")
