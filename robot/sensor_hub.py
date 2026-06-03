@@ -50,19 +50,20 @@ COLOR_PALETTE_32 = (
 )
 
 
-def _palette_ranges():
-    ranges = {}
-    for name, center, tolerance in COLOR_PALETTE_32:
-        ranges[name] = {
-            "center": center,
-            "min": tuple(max(0, c - tolerance) for c in center),
-            "max": tuple(min(255, c + tolerance) for c in center),
-            "tolerance": tolerance,
-        }
-    return ranges
+def _color_range(center, tolerance):
+    return {
+        "center": center,
+        "min": tuple(max(0, c - tolerance) for c in center),
+        "max": tuple(min(255, c + tolerance) for c in center),
+        "tolerance": tolerance,
+    }
 
 
-COLOR_RANGES_32 = _palette_ranges()
+def _palette_entry(name):
+    for item in COLOR_PALETTE_32:
+        if item[0] == name:
+            return item
+    return None
 
 
 def classify_rgb_color(r, g, b, clear=None):
@@ -90,15 +91,16 @@ def classify_rgb_color(r, g, b, clear=None):
         else:
             neutral_name = "white"
 
+        entry = _palette_entry(neutral_name)
         return {
             "name": neutral_name,
             "confidence": 100,
             "normalized": {"r": rn, "g": gn, "b": bn},
-            "range": COLOR_RANGES_32.get(neutral_name),
+            "range": _color_range(entry[1], entry[2]) if entry else None,
         }
 
     best_name = "unknown"
-    best_range = None
+    best_center = None
     best_distance = None
     best_tolerance = 1
 
@@ -121,7 +123,7 @@ def classify_rgb_color(r, g, b, clear=None):
 
         if best_distance is None or distance < best_distance:
             best_name = name
-            best_range = COLOR_RANGES_32.get(name)
+            best_center = center
             best_distance = distance
             best_tolerance = tolerance
 
@@ -130,7 +132,7 @@ def classify_rgb_color(r, g, b, clear=None):
         "name": best_name,
         "confidence": confidence,
         "normalized": {"r": rn, "g": gn, "b": bn},
-        "range": best_range,
+        "range": _color_range(best_center, best_tolerance) if best_center else None,
     }
 
 

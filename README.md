@@ -32,12 +32,18 @@ the service creates the `ZebraBot-Code` access point and listens at
 Upload from a browser by opening the robot URL, or from this repo with:
 
 ```powershell
-python tools\wifi_put.py http://192.168.4.1:8080 user_main.py --reset
+python tools\wifi_put.py user_main.py --ap --reset
 ```
 
 To join a normal router instead, set `WIFI_STA_SSID` and
 `WIFI_STA_PASSWORD` in `robot/wifi_config.py`. The AP can stay enabled as a
 fallback.
+
+When using a common router, pass the robot URL explicitly:
+
+```powershell
+python tools\wifi_put.py user_main.py --url http://ROBOT_IP:8080 --reset
+```
 
 Run the serial-side Wi-Fi module tests on a board attached to COM7 with:
 

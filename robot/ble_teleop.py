@@ -119,6 +119,8 @@ class BleTeleop:
         self._max_rx = 4096
         self._connected_flag = False
         self._disconnected_flag = False
+        self._idle_release_ms = 40000
+        self._disconnected_since_ms = None
 
         self._upload_path = None
         self._upload_tmp = None
@@ -127,7 +129,7 @@ class BleTeleop:
         self._oled_msg_task = None
 
         self._tx_queue = []
-        self._tx_queue_max = 80
+        self._tx_queue_max = 24
         self._tx_drop_count = 0
         self._quiet = False
 
@@ -145,7 +147,7 @@ class BleTeleop:
 
         # Optional: seed TX handle with a small buffer too.
         try:
-            self._ble.gatts_set_buffer(self._tx_handle, 512, False)
+            self._ble.gatts_set_buffer(self._tx_handle, 256, False)
         except Exception:
             pass
 
@@ -320,10 +322,27 @@ class BleTeleop:
                 if self._disconnected_flag:
                     self._disconnected_flag = False
                     self._on_disconnected()
+
+                self._release_idle_queues()
             except Exception as e:
                 self.notify_error("HOUSEKEEP", e)
 
             await asyncio.sleep_ms(50)
+
+    def _release_idle_queues(self):
+        if self._conn_handle is not None:
+            return
+        if self._disconnected_since_ms is None:
+            return
+        try:
+            if time.ticks_diff(time.ticks_ms(), self._disconnected_since_ms) < self._idle_release_ms:
+                return
+        except Exception:
+            return
+
+        if self._tx_queue is not None:
+            self._tx_queue = None
+        self._rx_buf = b""
 
     async def _tx_task(self):
         while True:
@@ -354,6 +373,9 @@ class BleTeleop:
             text = str(text)
         except Exception:
             text = "<notify encode error>"
+
+        if self._tx_queue is None:
+            self._tx_queue = []
 
         if len(self._tx_queue) >= self._tx_queue_max:
             self._tx_drop_count += 1
@@ -390,6 +412,10 @@ class BleTeleop:
         self._notify(text)
 
     def _on_connected(self):
+        self._disconnected_since_ms = None
+        if self._tx_queue is None:
+            self._tx_queue = []
+
         print("BLE connected")
         self.notify_info("BLE connected")
         replay_boot_log()
@@ -442,6 +468,10 @@ class BleTeleop:
         self._tx_queue = []
         self._rx_buf = b""
         self._quiet = False
+        try:
+            self._disconnected_since_ms = time.ticks_ms()
+        except Exception:
+            self._disconnected_since_ms = 0
         self._advertise()
 
     def _irq(self, event, data):
