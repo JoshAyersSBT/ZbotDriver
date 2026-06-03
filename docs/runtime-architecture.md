@@ -189,6 +189,8 @@ use.
   button manager.
 - `robot/ble_teleop.py`: BLE UART service, telemetry queue, command handling,
   file upload support, OLED connection notices, and IMU telemetry loop.
+- `robot/wifi_code.py`: Wi-Fi station/AP setup plus a tiny HTTP server for
+  browser or tool-based uploads to `user_main.py` and other filesystem paths.
 - `robot/motor_feedback.py`: Encoder feedback snapshot support used by motor
   telemetry.
 - `robot/motor_scan.py`: Optional motor pulse scanner and active feedback

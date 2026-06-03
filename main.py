@@ -50,6 +50,7 @@ import robot.config as robot_config
 from robot.motors import Motor
 from robot.servo import Servo
 from robot.ble_teleop import BleTeleop
+from robot.wifi_code import WifiCodeServer
 from robot.mpu6050 import MPU6050
 from robot.oled_status import OledStatus
 from robot.tca9548a import TCA9548A
@@ -130,6 +131,16 @@ BUTTON_DEBOUNCE_MS = _cfg("BUTTON_DEBOUNCE_MS", 35)
 BUTTON_SCAN_PERIOD_MS = _cfg("BUTTON_SCAN_PERIOD_MS", 10)
 BUTTON_DEFAULT_PULL = _cfg("BUTTON_DEFAULT_PULL", "down")
 BUTTON_DEFAULT_ACTIVE_LOW = _cfg("BUTTON_DEFAULT_ACTIVE_LOW", False)
+
+WIFI_CODE_ENABLED = _cfg("WIFI_CODE_ENABLED", False)
+WIFI_CODE_PORT = _cfg("WIFI_CODE_PORT", 8080)
+WIFI_STA_SSID = _cfg("WIFI_STA_SSID", "")
+WIFI_STA_PASSWORD = _cfg("WIFI_STA_PASSWORD", "")
+WIFI_STA_TIMEOUT_MS = _cfg("WIFI_STA_TIMEOUT_MS", 12000)
+WIFI_AP_ENABLED = _cfg("WIFI_AP_ENABLED", True)
+WIFI_AP_SSID = _cfg("WIFI_AP_SSID", "ZebraBot-Code")
+WIFI_AP_PASSWORD = _cfg("WIFI_AP_PASSWORD", "zebrabot")
+WIFI_CODE_TOKEN = _cfg("WIFI_CODE_TOKEN", "")
 
 # Optional future-facing config. Falls back cleanly to the legacy dedicated steer servo.
 SERVO_PORT_MAP = _cfg("SERVO_PORT_MAP", None)
@@ -1273,6 +1284,35 @@ async def _deferred_ble_start_task(api, drive, steering, imu, oled):
     state("BOOT", "ble_failed")
 
 
+async def _start_wifi_code_task(api, oled, notify_fn=None):
+    try:
+        server = WifiCodeServer(
+            port=WIFI_CODE_PORT,
+            sta_ssid=WIFI_STA_SSID,
+            sta_password=WIFI_STA_PASSWORD,
+            sta_timeout_ms=WIFI_STA_TIMEOUT_MS,
+            ap_enabled=WIFI_AP_ENABLED,
+            ap_ssid=WIFI_AP_SSID,
+            ap_password=WIFI_AP_PASSWORD,
+            token=WIFI_CODE_TOKEN,
+            notify=notify_fn,
+            oled=oled,
+        )
+        await server.start()
+        api.register_handle("wifi_code", server)
+        state("BOOT", "wifi_code_ok")
+        if oled is not None and getattr(oled, "available", False):
+            try:
+                first = server.addresses[0][1] if server.addresses else ""
+                oled.show_lines("ZebraBot WiFi", first, "port {}".format(WIFI_CODE_PORT))
+                await asyncio.sleep_ms(1200)
+            except Exception as e:
+                error("WIFI_CODE_OLED", e)
+    except Exception as e:
+        error("WIFI_CODE_START", e)
+        state("BOOT", "wifi_code_failed")
+
+
 def _detect_user_main_kind(user_main, user_fn):
     try:
         override = getattr(user_main, "USER_MAIN_KIND", None)
@@ -1726,6 +1766,18 @@ async def main():
             state("TASK", "ble_deferred_started")
         except Exception as e:
             error("BLE_DEFERRED_TASK", e)
+
+    if WIFI_CODE_ENABLED:
+        try:
+            notify_fn = teleop.notify_line if teleop is not None else None
+            api.register_task(
+                "wifi_code",
+                asyncio.create_task(_start_wifi_code_task(api, oled, notify_fn=notify_fn)),
+            )
+            info("BOOT: Wi-Fi code server task scheduled")
+            state("TASK", "wifi_code_started")
+        except Exception as e:
+            error("WIFI_CODE_TASK", e)
 
     info("BOOT: robot boot complete")
     state("BOOT", "complete")
