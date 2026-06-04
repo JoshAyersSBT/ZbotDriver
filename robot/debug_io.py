@@ -4,7 +4,7 @@ import sys
 
 _ble_sink = None
 _boot_log = []
-_BOOT_LOG_LIMIT = 120
+_BOOT_LOG_LIMIT = 48
 
 
 def set_ble_sink(obj):
@@ -19,10 +19,9 @@ def set_ble_sink(obj):
 
 
 def _push_boot(line):
-    global _boot_log
     _boot_log.append(str(line))
     if len(_boot_log) > _BOOT_LOG_LIMIT:
-        _boot_log = _boot_log[-_BOOT_LOG_LIMIT:]
+        del _boot_log[0:len(_boot_log) - _BOOT_LOG_LIMIT]
 
 
 def _serial(msg):
@@ -124,13 +123,15 @@ def dump_boot_log():
     return list(_boot_log)
 
 
-def replay_boot_log():
+def replay_boot_log(clear=True):
     """
     Replay retained boot/diag log lines over BLE after a central connects.
-    Safe to call multiple times.
+    Clears the retained copy by default to release RAM after first replay.
     """
     for line in _boot_log:
         _ble_line(line)
+    if clear:
+        del _boot_log[:]
 
 
 def exc_to_string(exc):

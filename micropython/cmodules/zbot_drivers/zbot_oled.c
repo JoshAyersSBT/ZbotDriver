@@ -6,6 +6,8 @@ typedef struct _zbot_sh1106_obj_t {
     mp_obj_t i2c;
     mp_obj_t buffer;
     mp_obj_t framebuffer;
+    mp_obj_t cmd_buffer;
+    mp_obj_t data_buffer;
     uint8_t addr;
     int width;
     int height;
@@ -15,16 +17,27 @@ typedef struct _zbot_sh1106_obj_t {
 } zbot_sh1106_obj_t;
 
 static void zbot_sh1106_write_cmd(zbot_sh1106_obj_t *self, uint8_t cmd) {
-    uint8_t data[2] = { 0x80, cmd };
+    mp_buffer_info_t bufinfo;
+    mp_get_buffer_raise(self->cmd_buffer, &bufinfo, MP_BUFFER_WRITE);
+    uint8_t *data = (uint8_t *)bufinfo.buf;
+    data[0] = 0x80;
+    data[1] = cmd;
+
     mp_obj_t dest[4];
     mp_load_method(self->i2c, MP_QSTR_writeto, dest);
     dest[2] = mp_obj_new_int(self->addr);
-    dest[3] = mp_obj_new_bytes(data, 2);
+    dest[3] = self->cmd_buffer;
     mp_call_method_n_kw(2, 0, dest);
 }
 
 static void zbot_sh1106_write_data(zbot_sh1106_obj_t *self, const uint8_t *buf, size_t len) {
-    uint8_t *data = m_new(uint8_t, len + 1);
+    mp_buffer_info_t bufinfo;
+    mp_get_buffer_raise(self->data_buffer, &bufinfo, MP_BUFFER_WRITE);
+    if (len + 1 > bufinfo.len) {
+        mp_raise_ValueError(MP_ERROR_TEXT("OLED data too large"));
+    }
+
+    uint8_t *data = (uint8_t *)bufinfo.buf;
     data[0] = 0x40;
     for (size_t i = 0; i < len; i++) {
         data[i + 1] = buf[i];
@@ -33,9 +46,8 @@ static void zbot_sh1106_write_data(zbot_sh1106_obj_t *self, const uint8_t *buf, 
     mp_obj_t dest[4];
     mp_load_method(self->i2c, MP_QSTR_writeto, dest);
     dest[2] = mp_obj_new_int(self->addr);
-    dest[3] = mp_obj_new_bytes(data, len + 1);
+    dest[3] = self->data_buffer;
     mp_call_method_n_kw(2, 0, dest);
-    m_del(uint8_t, data, len + 1);
 }
 
 static void zbot_sh1106_init_display(zbot_sh1106_obj_t *self) {
@@ -102,6 +114,8 @@ static mp_obj_t zbot_sh1106_make_new(const mp_obj_type_t *type, size_t n_args, s
 
     size_t buf_len = self->width * self->pages;
     self->buffer = mp_obj_new_bytearray(buf_len, NULL);
+    self->cmd_buffer = mp_obj_new_bytearray(2, NULL);
+    self->data_buffer = mp_obj_new_bytearray(self->width + 1, NULL);
 
     mp_obj_t framebuf = mp_import_name(MP_QSTR_framebuf, mp_const_none, MP_OBJ_NEW_SMALL_INT(0));
     mp_obj_t framebuffer_type = mp_load_attr(framebuf, MP_QSTR_FrameBuffer);

@@ -201,6 +201,11 @@ class SensorHub:
         self._color = {}
         self._last_value = {}
         self._retry_div = {}
+        self._snapshot_cache = None
+        self._snapshot_dirty = True
+
+    def _mark_snapshot_dirty(self):
+        self._snapshot_dirty = True
 
     def snapshot(self):
         """
@@ -211,6 +216,9 @@ class SensorHub:
             color_port_2 = {"value": {"r":...,"g":...,"b":...,"clear":...}, "meta": {...}}
             port_1_state = {"value": "VL53L0X", "meta": {"port": 1}}
         """
+        if not self._snapshot_dirty and self._snapshot_cache is not None:
+            return self._snapshot_cache
+
         out = {}
 
         for port in range(1, 7):
@@ -258,6 +266,8 @@ class SensorHub:
                         },
                     }
 
+        self._snapshot_cache = out
+        self._snapshot_dirty = False
         return out
 
     def _select(self, port):
@@ -282,6 +292,7 @@ class SensorHub:
         self._last_value.pop(("TCS3472", port), None)
         self._last_value.pop(("VL53L1X", port), None)
         self._last_value.pop(("VL53L0X", port), None)
+        self._mark_snapshot_dirty()
 
     def _publish_state(self, port, state, addrs):
         self._notify("SNS {} {}".format(port, state))
@@ -356,6 +367,7 @@ class SensorHub:
 
             self._tof[port] = ("VL53L1X", sensor)
             self._last_value[("VL53L1X", port)] = sample["cand_96"]
+            self._mark_snapshot_dirty()
             return True
 
         except Exception as e:
@@ -401,6 +413,7 @@ class SensorHub:
 
             self._tof[port] = ("VL53L0X", sensor)
             self._last_value[("VL53L0X", port)] = dist
+            self._mark_snapshot_dirty()
             self._notify("SNS_DBG {} vl53l0x {}".format(port, dist))
             return True
 
@@ -437,6 +450,7 @@ class SensorHub:
 
             if self._last_value.get(("TCS3472", port)) != value:
                 self._last_value[("TCS3472", port)] = value
+                self._mark_snapshot_dirty()
                 self._notify("SNS_COLOR {} {} {} {} {}".format(
                     port, d["r"], d["g"], d["b"], d["clear"]
                 ))
@@ -485,6 +499,7 @@ class SensorHub:
 
             if self._last_value.get((kind, port)) != dist:
                 self._last_value[(kind, port)] = dist
+                self._mark_snapshot_dirty()
                 self._notify("SNS_TOF {} {}".format(port, dist))
                 self._notify("SNS {} {}".format(port, kind))
 
@@ -506,6 +521,7 @@ class SensorHub:
         if state_name is None:
             state_name = self._identify(port, addrs)
             self._cache_state[port] = state_name
+            self._mark_snapshot_dirty()
             self._publish_state(port, state_name, addrs)
 
         if state_name == "empty":
