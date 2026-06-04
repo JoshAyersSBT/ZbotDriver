@@ -178,7 +178,7 @@ SENSOR_DATA_PINS = {
 # SENSOR HUB CONFIG
 # ============================================================
 
-SENSOR_SCAN_PERIOD_MS = 5000
+SENSOR_SCAN_PERIOD_MS = 500
 
 SENSOR_PORT_MODES = {
     1: "auto",
