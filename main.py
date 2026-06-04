@@ -1643,12 +1643,6 @@ async def main():
         error("RUNTIME_DRIVE_INIT", e)
 
     try:
-        _start_user_main_task(api)
-        await asyncio.sleep_ms(0)
-    except Exception as e:
-        error("USER_TASK_START", e)
-
-    try:
         from robot.button import ButtonManager
 
         button_manager = ButtonManager(

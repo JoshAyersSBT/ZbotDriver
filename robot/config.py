@@ -207,6 +207,25 @@ MOTOR_FEEDBACK_PERIOD_MS = 200
 # BUTTON IO Settings
 # ============================================================
 
-BUTTON0_IO  = 15
-BUTTON0_IO  = 12
-PULLDOWN = True
+BUTTON1_IO = 15
+BUTTON2_IO = 12
+
+BUTTON_DEFAULT_PULL = "down"
+BUTTON_DEFAULT_ACTIVE_LOW = False
+BUTTON_DEBOUNCE_MS = 45
+BUTTON_SCAN_PERIOD_MS = 10
+
+BUTTON_MAP = {
+    1: {
+        "name": "B1",
+        "gpio": BUTTON1_IO,
+        "pull": BUTTON_DEFAULT_PULL,
+        "active_low": BUTTON_DEFAULT_ACTIVE_LOW,
+    },
+    2: {
+        "name": "B2",
+        "gpio": BUTTON2_IO,
+        "pull": BUTTON_DEFAULT_PULL,
+        "active_low": BUTTON_DEFAULT_ACTIVE_LOW,
+    },
+}
