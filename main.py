@@ -24,6 +24,9 @@ DEFAULT_STEER_RANGE_DEG = 45
 COLOR_CALIBRATION_DEFAULT_SAMPLES = 8
 COLOR_CALIBRATION_DEFAULT_DELAY_MS = 40
 COLOR_CALIBRATION_MAX_SAMPLES = 30
+COLOR_CALIBRATION_MAX_DISTANCE = 180
+COLOR_BLACK_TOTAL_MAX = 100
+COLOR_BLACK_CLEAR_MAX = 120
 
 API = None
 zbot = None
@@ -140,6 +143,17 @@ def _color_distance(a, b):
         abs(int(a.get("g", 0)) - int(b.get("g", 0))) +
         abs(int(a.get("b", 0)) - int(b.get("b", 0)))
     )
+
+
+def _relative_channel_distance(a, b):
+    a = int(a)
+    b = int(b)
+    scale = max(abs(a), abs(b), 1)
+    return int(abs(a - b) * 255 / scale)
+
+
+def _raw_rgb_total(rgb):
+    return int(rgb.get("r", 0)) + int(rgb.get("g", 0)) + int(rgb.get("b", 0))
 
 
 class RuntimeDriveBridge:
@@ -567,6 +581,8 @@ class RobotAPI:
             "name": label,
             "rgb": raw,
             "normalized": normalized,
+            "total": _raw_rgb_total(raw),
+            "clear": int(raw.get("clear", 0)),
             "samples": int(samples),
             "ts_ms": time.ticks_ms(),
         }
@@ -598,7 +614,16 @@ class RobotAPI:
         best = None
         best_distance = None
         for item in labels.values():
-            distance = _color_distance(sample, item.get("normalized", {}))
+            chroma_distance = _color_distance(sample, item.get("normalized", {}))
+            total_distance = _relative_channel_distance(
+                _raw_rgb_total(rgb),
+                item.get("total", _raw_rgb_total(item.get("rgb", {}))),
+            )
+            clear_distance = _relative_channel_distance(
+                rgb.get("clear", 0),
+                item.get("clear", item.get("rgb", {}).get("clear", 0)),
+            )
+            distance = chroma_distance + total_distance + clear_distance
             if best_distance is None or distance < best_distance:
                 best = item
                 best_distance = distance
@@ -606,9 +631,21 @@ class RobotAPI:
         if best is None:
             return None
 
-        confidence = max(0, 100 - int(best_distance * 100 / 255))
+        best_name = best.get("name")
+        if (
+            best_name == "black"
+            and (
+                _raw_rgb_total(rgb) < COLOR_BLACK_TOTAL_MAX
+                or int(rgb.get("clear", 0)) < COLOR_BLACK_CLEAR_MAX
+            )
+        ):
+            best_distance = min(best_distance, 0)
+        elif best_distance > COLOR_CALIBRATION_MAX_DISTANCE:
+            return None
+
+        confidence = max(0, 100 - int(best_distance * 100 / COLOR_CALIBRATION_MAX_DISTANCE))
         return {
-            "color": best.get("name"),
+            "color": best_name,
             "confidence": confidence,
             "rgb": {
                 "r": int(rgb.get("r", 0)),

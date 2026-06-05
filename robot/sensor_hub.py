@@ -50,6 +50,9 @@ COLOR_PALETTE_32 = (
     ("rose", (255, 0, 128), 85),
 )
 
+BLACK_TOTAL_MAX = 100
+BLACK_CLEAR_MAX = 120
+
 
 def _color_range(center, tolerance):
     return {
@@ -75,6 +78,16 @@ def classify_rgb_color(r, g, b, clear=None):
             "confidence": 0,
             "normalized": {"r": 0, "g": 0, "b": 0},
             "range": None,
+        }
+
+    clear_value = int(clear) if clear is not None else total
+    if total < BLACK_TOTAL_MAX or clear_value < BLACK_CLEAR_MAX:
+        entry = _palette_entry("black")
+        return {
+            "name": "black",
+            "confidence": 100,
+            "normalized": {"r": 0, "g": 0, "b": 0},
+            "range": _color_range(entry[1], entry[2]) if entry else None,
         }
 
     rn = int(int(r) * 255 / total)

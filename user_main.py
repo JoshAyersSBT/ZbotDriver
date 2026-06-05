@@ -1,33 +1,37 @@
 async def main(zbot):
     import uasyncio as asyncio
-    from robot.ackermann import AckermannDrive
 
     color_sensor_port = 1
-    stop_color = "red"
-    drive_power = 35
 
-    car = AckermannDrive(
-        zbot,
-        drive_motor_port=1,
-        steering_port=4,
-        center_angle=90,
-    )
+    zbot.display("Color monitor", "Port {}".format(color_sensor_port))
 
-    zbot.display("Color stop", "Find {}".format(stop_color))
-    car.steer_center()
-    car.forward(drive_power)
+    while True:
+        match = zbot.sensor(color_sensor_port).color_match()
 
-    try:
-        while True:
-            color = zbot.color(color_sensor_port)
-            print("I see:", color)
+        if match is None:
+            print("Color: none")
+            zbot.display("Color", "none")
+            await asyncio.sleep_ms(300)
+            continue
 
-            if color == stop_color:
-                car.stop()
-                zbot.display("Stopped", "Saw {}".format(stop_color))
-                break
+        color = match.get("color")
+        confidence = int(match.get("confidence", 0))
+        rgb = match.get("rgb", {})
 
-            await asyncio.sleep_ms(100)
+        print(
+            "Color:",
+            color,
+            "confidence:",
+            confidence,
+            "rgb:",
+            rgb,
+        )
 
-    finally:
-        car.stop()
+        zbot.display(
+            "Color {}".format(color),
+            "Conf {}".format(confidence),
+            "R{} G{}".format(rgb.get("r", 0), rgb.get("g", 0)),
+            "B{} C{}".format(rgb.get("b", 0), rgb.get("clear", 0)),
+        )
+
+        await asyncio.sleep_ms(300)
