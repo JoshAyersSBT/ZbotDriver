@@ -1880,14 +1880,6 @@ async def main():
 
     await _boot_complete_message(api)
 
-    if sensor_hub is not None:
-        try:
-            api.register_task("sensor_hub", _create_guarded_task(api, "sensor_hub", sensor_hub.task()))
-            info("BOOT: SensorHub task started")
-            state("TASK", "sensorhub_started")
-        except Exception as e:
-            error("SENSOR_HUB_TASK", e)
-
     if api.get_handle("teleop_imu_task_started") is not None:
         pass
     elif imu is not None and teleop is not None:
@@ -1955,6 +1947,14 @@ async def main():
         _start_user_main_task(api)
     except Exception as e:
         error("USER_TASK_START", e)
+
+    if sensor_hub is not None:
+        try:
+            api.register_task("sensor_hub", _create_guarded_task(api, "sensor_hub", sensor_hub.task()))
+            info("BOOT: SensorHub task started")
+            state("TASK", "sensorhub_started")
+        except Exception as e:
+            error("SENSOR_HUB_TASK", e)
 
     while True:
         api.status["system"]["heartbeat"] += 1
