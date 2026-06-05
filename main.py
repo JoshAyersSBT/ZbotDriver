@@ -24,6 +24,8 @@ DEFAULT_STEER_RANGE_DEG = 45
 
 API = None
 zbot = None
+_BOOT_SPINNER_FRAMES = ("|", "/", "-", "\\")
+_boot_spinner_index = 0
 
 
 def _cfg(name, default=None):
@@ -77,6 +79,7 @@ MOTOR_SCAN_POWER = _cfg("MOTOR_SCAN_POWER", 25)
 MOTOR_SCAN_PULSE_MS = _cfg("MOTOR_SCAN_PULSE_MS", 250)
 MOTOR_SCAN_PERIOD_MS = _cfg("MOTOR_SCAN_PERIOD_MS", 1500)
 MOTOR_FEEDBACK_PERIOD_MS = _cfg("MOTOR_FEEDBACK_PERIOD_MS", 200)
+MOTOR_FEEDBACK_ENABLED = _cfg("MOTOR_FEEDBACK_ENABLED", True)
 
 BUTTON_MAP = _cfg("BUTTON_MAP", {
     1: {"name": "B1", "gpio": 15, "pull": "down", "active_low": False},
@@ -1094,7 +1097,18 @@ def _start_user_main_task(api):
     return True
 
 
-def _boot_oled(api, line1, line2="", line3=""):
+def _boot_spinner_text(text):
+    global _boot_spinner_index
+
+    value = str(text)
+    frame = _BOOT_SPINNER_FRAMES[_boot_spinner_index % len(_BOOT_SPINNER_FRAMES)]
+    _boot_spinner_index += 1
+    if value:
+        return "{} {}".format(value, frame)
+    return frame
+
+
+def _boot_oled(api, line1, line2="", line3="", spinner=True):
     try:
         if api is None:
             return
@@ -1107,6 +1121,8 @@ def _boot_oled(api, line1, line2="", line3=""):
 
         oled = api.get_handle("oled")
         if oled is not None and getattr(oled, "available", False):
+            if spinner:
+                line2 = _boot_spinner_text(line2)
             oled.show_lines(line1, line2, line3)
     except Exception as e:
         error("BOOT_OLED", e)
@@ -1737,7 +1753,7 @@ async def main():
         )
         if oled and oled.available:
             api.register_handle("oled", oled)
-            oled.show_lines("ZebraBot", "Booting...", "OLED online")
+            _boot_oled(api, "ZebraBot", "Booting...", "OLED online")
             info("BOOT: OLED initialized")
             diag("OLED CH={} ADDR={}".format(OLED_CHANNEL, hex(OLED_ADDR)))
             state("BOOT", "oled_ok")
@@ -1778,6 +1794,7 @@ async def main():
         warn("BOOT: BLE disabled by config")
         state("BOOT", "ble_disabled")
 
+    _boot_oled(api, "ZebraBot", "Sensors init", "")
     try:
         from robot.sensor_hub import SensorHub
 
@@ -1796,45 +1813,54 @@ async def main():
         api.register_handle("sensor_hub", sensor_hub)
         info("BOOT: SensorHub initialized")
         state("BOOT", "sensorhub_ok")
+        _boot_oled(api, "ZebraBot", "Sensors ok", "")
     except Exception as e:
         error("SENSOR_HUB_INIT", e)
         sensor_hub = None
+        _boot_oled(api, "ZebraBot", "Sensors fail", str(type(e).__name__))
 
-    _boot_oled(api, "ZebraBot", "Starting motors", "")
+    if MOTOR_FEEDBACK_ENABLED:
+        _boot_oled(api, "ZebraBot", "Starting motors", "")
 
-    try:
-        from robot.motor_feedback import MotorFeedback
-        from robot.motor_scan import MotorScanner
+        try:
+            from robot.motor_feedback import MotorFeedback
+            from robot.motor_scan import MotorScanner
 
-        motor_port_map = dict(MOTOR_PORT_MAP)
-        motor_feedback = MotorFeedback(motor_port_map)
-        motor_scanner = MotorScanner(
-            motors=motors,
-            feedback=motor_feedback,
-            notify_fn=teleop.notify_line if teleop is not None else None,
-            ports=ACTIVE_MOTOR_PORTS,
-            scan_power=MOTOR_SCAN_POWER,
-            pulse_ms=MOTOR_SCAN_PULSE_MS,
-            period_ms=MOTOR_SCAN_PERIOD_MS,
-            max_duty_u16=MOTOR_MAX_DUTY_U16,
-        )
+            motor_port_map = dict(MOTOR_PORT_MAP)
+            motor_feedback = MotorFeedback(motor_port_map)
+            motor_scanner = MotorScanner(
+                motors=motors,
+                feedback=motor_feedback,
+                notify_fn=teleop.notify_line if teleop is not None else None,
+                ports=ACTIVE_MOTOR_PORTS,
+                scan_power=MOTOR_SCAN_POWER,
+                pulse_ms=MOTOR_SCAN_PULSE_MS,
+                period_ms=MOTOR_SCAN_PERIOD_MS,
+                max_duty_u16=MOTOR_MAX_DUTY_U16,
+            )
 
-        api.register_handle("motor_feedback", motor_feedback)
-        api.register_handle("motor_scanner", motor_scanner)
+            api.register_handle("motor_feedback", motor_feedback)
+            api.register_handle("motor_scanner", motor_scanner)
 
-        if teleop is not None:
-            teleop.motor_feedback = motor_feedback
-            teleop.motor_scanner = motor_scanner
-            teleop.motor_ports = ACTIVE_MOTOR_PORTS
-            teleop.motor_port_map = motor_port_map
+            if teleop is not None:
+                teleop.motor_feedback = motor_feedback
+                teleop.motor_scanner = motor_scanner
+                teleop.motor_ports = ACTIVE_MOTOR_PORTS
+                teleop.motor_port_map = motor_port_map
 
-        info("BOOT: motor feedback/scanner initialized")
-        state("BOOT", "motor_scan_ok")
+            info("BOOT: motor feedback/scanner initialized")
+            state("BOOT", "motor_scan_ok")
 
-    except Exception as e:
-        error("MOTOR_SCAN_INIT", e)
+        except Exception as e:
+            error("MOTOR_SCAN_INIT", e)
+            motor_feedback = None
+            motor_scanner = None
+    else:
         motor_feedback = None
         motor_scanner = None
+        info("BOOT: motor feedback/scanner disabled")
+        state("BOOT", "motor_scan_disabled")
+        _boot_oled(api, "ZebraBot", "Motors skipped", "")
 
     if BLE_ENABLED and teleop is None:
         try:
@@ -1972,6 +1998,11 @@ try:
     boot()
 except Exception as e:
     _emergency_stop_motors(API, "BOOT_UNHANDLED", e)
+    try:
+        if API is not None:
+            _boot_oled(API, "BOOT ERROR", str(type(e).__name__), str(e)[:20], spinner=False)
+    except Exception:
+        pass
     error("BOOT_UNHANDLED", e)
     raise
 finally:
