@@ -128,6 +128,7 @@ STEER_SERVO_GPIO = SERVO_PORT_MAP[STEER_SERVO_PORT]["gpio"]
 # ============================================================
 
 BLE_NAME = "ZebraBot"
+BLE_ENABLED = False
 
 
 # ============================================================
@@ -171,6 +172,15 @@ SENSOR_DATA_PINS = {
     4: 36,
     5: 39,
     6: 4,
+}
+
+SENSOR_PORT_CHANNELS = {
+    1: 6,
+    2: 5,
+    3: 4,
+    4: 3,
+    5: 2,
+    6: 1,
 }
 
 

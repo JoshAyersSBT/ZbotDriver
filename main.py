@@ -57,6 +57,7 @@ TCA_ADDR = _cfg("TCA_ADDR", 0x70)
 MPU_ADDR = _cfg("MPU_ADDR", 0x68)
 MPU_CHANNEL = _cfg("MPU_CHANNEL", 7)
 MPU_PERIOD_MS = _cfg("MPU_PERIOD_MS", 10)
+BLE_ENABLED = _cfg("BLE_ENABLED", True)
 
 OLED_ADDR = _cfg("OLED_ADDR", 0x3C)
 OLED_CHANNEL = _cfg("OLED_CHANNEL", 0)
@@ -65,6 +66,7 @@ OLED_HEIGHT = _cfg("OLED_HEIGHT", 64)
 
 SENSOR_SCAN_PERIOD_MS = _cfg("SENSOR_SCAN_PERIOD_MS", 100)
 SENSOR_PORT_MODES = _cfg("SENSOR_PORT_MODES", {})
+SENSOR_PORT_CHANNELS = _cfg("SENSOR_PORT_CHANNELS", {})
 
 MOTOR_PORT_MAP = _cfg("MOTOR_PORT_MAP", {})
 ACTIVE_MOTOR_PORTS = _cfg("ACTIVE_MOTOR_PORTS", tuple(sorted(MOTOR_PORT_MAP.keys())))
@@ -1745,29 +1747,35 @@ async def main():
         error("OLED_INIT", e)
         oled = None
 
-    _boot_oled(api, "ZebraBot", "Starting BLE", "")
-    try:
-        from robot.ble_teleop import BleTeleop
+    if BLE_ENABLED:
+        _boot_oled(api, "ZebraBot", "Starting BLE", "")
+        try:
+            from robot.ble_teleop import BleTeleop
 
-        teleop = BleTeleop(
-            drive=runtime_drive,
-            steering=steer,
-            imu=imu,
-            imu_period_ms=MPU_PERIOD_MS,
-            oled=oled,
-            ble=PREACTIVE_BLE,
-        )
-        PREACTIVE_BLE = None
-        _attach_ble_teleop(api, teleop, imu=imu, start_imu=False)
+            teleop = BleTeleop(
+                drive=runtime_drive,
+                steering=steer,
+                imu=imu,
+                imu_period_ms=MPU_PERIOD_MS,
+                oled=oled,
+                ble=PREACTIVE_BLE,
+            )
+            PREACTIVE_BLE = None
+            _attach_ble_teleop(api, teleop, imu=imu, start_imu=False)
 
-        info("BOOT: BLE teleop initialized")
-        state("BOOT", "ble_ok")
-    except Exception as e:
+            info("BOOT: BLE teleop initialized")
+            state("BOOT", "ble_ok")
+        except Exception as e:
+            teleop = None
+            error("BLE_INIT", e)
+            _boot_oled(api, "ZebraBot", "BLE init fail", str(type(e).__name__))
+            warn("BOOT: BLE init deferred")
+            state("BOOT", "ble_deferred")
+    else:
         teleop = None
-        error("BLE_INIT", e)
-        _boot_oled(api, "ZebraBot", "BLE init fail", str(type(e).__name__))
-        warn("BOOT: BLE init deferred")
-        state("BOOT", "ble_deferred")
+        PREACTIVE_BLE = None
+        warn("BOOT: BLE disabled by config")
+        state("BOOT", "ble_disabled")
 
     try:
         from robot.sensor_hub import SensorHub
@@ -1782,6 +1790,7 @@ async def main():
             port_modes=SENSOR_PORT_MODES,
             notify_fn=notify_fn,
             scan_period_ms=SENSOR_SCAN_PERIOD_MS,
+            port_channels=SENSOR_PORT_CHANNELS,
         )
         api.register_handle("sensor_hub", sensor_hub)
         info("BOOT: SensorHub initialized")
@@ -1826,7 +1835,7 @@ async def main():
         motor_feedback = None
         motor_scanner = None
 
-    if teleop is None:
+    if BLE_ENABLED and teleop is None:
         try:
             api.register_task(
                 "ble_deferred",

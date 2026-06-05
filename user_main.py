@@ -37,9 +37,15 @@ async def main(zbot):
             color = color_sensor.color()
             if rgb is None:
                 sensors = zbot.sensors()
-                state = sensors.get("port_1_state", {}).get("value", "?")
+                item = sensors.get("port_1_state", {})
+                meta = item.get("meta", {})
+                state = item.get("value", "?")
+                addrs = meta.get("addrs", [])
                 line = "P1 {}".format(state)
-                detail = ""
+                detail = "ch{} {}".format(
+                    meta.get("mux_channel", "?"),
+                    ",".join(hex(a) for a in addrs) if addrs else "none",
+                )
             else:
                 line = "R{} G{} B{}".format(rgb["r"], rgb["g"], rgb["b"])
                 detail = "C{} {}".format(rgb["clear"], color or "?")
