@@ -709,24 +709,6 @@ class _ZBotSensor:
             if isinstance(item, dict) and isinstance(item.get("value"), dict):
                 return item
 
-        for key, item in sensors.items():
-            if not isinstance(item, dict):
-                continue
-
-            value = item.get("value")
-            if not isinstance(value, dict):
-                continue
-
-            meta = item.get("meta", {})
-            key_s = str(key).lower()
-            meta_s = str(meta).lower()
-
-            if "color" in key_s and str(self.port) in key_s:
-                return item
-
-            if "color" in meta_s and str(self.port) in meta_s:
-                return item
-
         return None
 
     def read(self):
@@ -765,10 +747,16 @@ class _ZBotSensor:
             return None
 
         value = item.get("value", {})
+        rgb = {
+            "r": int(value.get("r", 0)),
+            "g": int(value.get("g", 0)),
+            "b": int(value.get("b", 0)),
+            "clear": int(value.get("clear", 0)),
+        }
         return {
             "color": value.get("color"),
             "confidence": int(value.get("confidence", 0)),
-            "rgb": self.rgb(),
+            "rgb": rgb,
             "normalized": value.get("normalized"),
             "range": item.get("meta", {}).get("range"),
         }

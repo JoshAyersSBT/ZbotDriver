@@ -33,9 +33,8 @@ async def main(zbot):
             print(line, raw_line)
 
         if not b1.pressed() and not b2.pressed():
-            rgb = color_sensor.rgb()
-            color = color_sensor.color()
-            if rgb is None:
+            match = color_sensor.color_match()
+            if match is None:
                 sensors = zbot.sensors()
                 item = sensors.get("port_1_state", {})
                 meta = item.get("meta", {})
@@ -47,8 +46,9 @@ async def main(zbot):
                     ",".join(hex(a) for a in addrs) if addrs else "none",
                 )
             else:
+                rgb = match["rgb"]
                 line = "R{} G{} B{}".format(rgb["r"], rgb["g"], rgb["b"])
-                detail = "C{} {}".format(rgb["clear"], color or "?")
+                detail = "C{} {}".format(rgb["clear"], match["color"] or "?")
 
             zbot.display("Port 1 Color", raw_line, line, detail)
             print(raw_line, line, detail)
