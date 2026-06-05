@@ -150,6 +150,7 @@ OLED_ADDR = 0x3C
 OLED_CHANNEL = 0
 OLED_WIDTH = 128
 OLED_HEIGHT = 64
+OLED_STATUS_ENABLED = False
 
 
 # ============================================================

@@ -63,6 +63,7 @@ OLED_ADDR = _cfg("OLED_ADDR", 0x3C)
 OLED_CHANNEL = _cfg("OLED_CHANNEL", 0)
 OLED_WIDTH = _cfg("OLED_WIDTH", 128)
 OLED_HEIGHT = _cfg("OLED_HEIGHT", 64)
+OLED_STATUS_ENABLED = _cfg("OLED_STATUS_ENABLED", True)
 
 SENSOR_SCAN_PERIOD_MS = _cfg("SENSOR_SCAN_PERIOD_MS", 100)
 SENSOR_PORT_MODES = _cfg("SENSOR_PORT_MODES", {})
@@ -1913,12 +1914,16 @@ async def main():
     except Exception as e:
         error("API_HOUSEKEEPING", e)
 
-    try:
-        api.register_task("oled_status", _create_guarded_task(api, "oled_status", _oled_status_task(api)))
-        info("BOOT: OLED status task started")
-        state("TASK", "oled_status_started")
-    except Exception as e:
-        error("OLED_STATUS_START", e)
+    if OLED_STATUS_ENABLED:
+        try:
+            api.register_task("oled_status", _create_guarded_task(api, "oled_status", _oled_status_task(api)))
+            info("BOOT: OLED status task started")
+            state("TASK", "oled_status_started")
+        except Exception as e:
+            error("OLED_STATUS_START", e)
+    else:
+        info("BOOT: OLED status task disabled")
+        state("TASK", "oled_status_disabled")
 
     try:
         _start_user_main_task(api)
