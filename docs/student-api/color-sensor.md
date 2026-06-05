@@ -84,3 +84,46 @@ indigo, purple, violet, lavender, magenta, pink, rose
 
 Use these exact names with `zbot.color(port)` comparisons or
 `zbot.sensor(port).is_color(name)`.
+
+## Calibration
+
+Use calibration when the built-in color names do not match your lighting,
+surface, or sensor height. Put the sensor over a sample surface, call
+`calibrate_color()`, then use `zbot.color()` normally.
+
+```python
+port = 2
+
+zbot.display("Calibrate", "Put on red")
+zbot.calibrate_color(port, "red")
+
+zbot.display("Calibrate", "Put on blue")
+zbot.calibrate_color(port, "blue")
+
+while True:
+    color = zbot.color(port)
+
+    if color == "red":
+        zbot.stop()
+        break
+```
+
+Each calibration takes several quick RGB samples and stores the averaged
+reference in memory. Calibrated names are checked before the built-in palette.
+The same helper is available from a direct sensor wrapper:
+
+```python
+floor = zbot.sensor(2)
+floor.calibrate_color("line")
+floor.calibrate_color("floor")
+
+if floor.is_color("line"):
+    zbot.notify("On the line")
+```
+
+To inspect or reset the learned references:
+
+```python
+refs = zbot.color_calibrations(2)
+zbot.clear_color_calibration(2)
+```

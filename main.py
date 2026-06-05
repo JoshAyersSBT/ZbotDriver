@@ -21,6 +21,9 @@ SAFE_MODE_PIN = 0
 BOOT_GRACE_SECONDS = 3
 DEFAULT_STEER_CENTER_DEG = 90
 DEFAULT_STEER_RANGE_DEG = 45
+COLOR_CALIBRATION_DEFAULT_SAMPLES = 8
+COLOR_CALIBRATION_DEFAULT_DELAY_MS = 40
+COLOR_CALIBRATION_MAX_SAMPLES = 30
 
 API = None
 zbot = None
@@ -117,6 +120,28 @@ def _clamp(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
 
 
+def _normalized_rgb(rgb):
+    r = int(rgb.get("r", 0))
+    g = int(rgb.get("g", 0))
+    b = int(rgb.get("b", 0))
+    total = r + g + b
+    if total <= 0:
+        return {"r": 0, "g": 0, "b": 0}
+    return {
+        "r": int(r * 255 / total),
+        "g": int(g * 255 / total),
+        "b": int(b * 255 / total),
+    }
+
+
+def _color_distance(a, b):
+    return (
+        abs(int(a.get("r", 0)) - int(b.get("r", 0))) +
+        abs(int(a.get("g", 0)) - int(b.get("g", 0))) +
+        abs(int(a.get("b", 0)) - int(b.get("b", 0)))
+    )
+
+
 class RuntimeDriveBridge:
     """
     Generic boot/runtime drive bridge used by BLE teleop and legacy calls.
@@ -196,6 +221,7 @@ class RobotAPI:
         }
         self.handles = {}
         self.tasks = {}
+        self.color_calibrations = {}
         self._oled_user_hold_until = 0
 
     def register_handle(self, name, value):
@@ -517,6 +543,85 @@ class RobotAPI:
     def get_sensor_snapshot(self):
         return self.status.get("sensors", {})
 
+    def get_color_calibrations(self, port=None):
+        if port is None:
+            return self.color_calibrations
+        return self.color_calibrations.get(int(port), {})
+
+    def set_color_calibration(self, port, name, rgb, samples=1):
+        port = int(port)
+        label = str(name).strip().lower()
+        if not label:
+            raise ValueError("color name required")
+        if rgb is None:
+            raise ValueError("rgb sample required")
+
+        raw = {
+            "r": int(rgb.get("r", 0)),
+            "g": int(rgb.get("g", 0)),
+            "b": int(rgb.get("b", 0)),
+            "clear": int(rgb.get("clear", 0)),
+        }
+        normalized = _normalized_rgb(raw)
+        item = {
+            "name": label,
+            "rgb": raw,
+            "normalized": normalized,
+            "samples": int(samples),
+            "ts_ms": time.ticks_ms(),
+        }
+        self.color_calibrations.setdefault(port, {})[label] = item
+        return item
+
+    def clear_color_calibration(self, port=None, name=None):
+        if port is None:
+            self.color_calibrations = {}
+            return True
+
+        port = int(port)
+        if name is None:
+            self.color_calibrations.pop(port, None)
+            return True
+
+        labels = self.color_calibrations.get(port, {})
+        labels.pop(str(name).strip().lower(), None)
+        if not labels:
+            self.color_calibrations.pop(port, None)
+        return True
+
+    def match_calibrated_color(self, port, rgb):
+        labels = self.color_calibrations.get(int(port), {})
+        if not labels or rgb is None:
+            return None
+
+        sample = _normalized_rgb(rgb)
+        best = None
+        best_distance = None
+        for item in labels.values():
+            distance = _color_distance(sample, item.get("normalized", {}))
+            if best_distance is None or distance < best_distance:
+                best = item
+                best_distance = distance
+
+        if best is None:
+            return None
+
+        confidence = max(0, 100 - int(best_distance * 100 / 255))
+        return {
+            "color": best.get("name"),
+            "confidence": confidence,
+            "rgb": {
+                "r": int(rgb.get("r", 0)),
+                "g": int(rgb.get("g", 0)),
+                "b": int(rgb.get("b", 0)),
+                "clear": int(rgb.get("clear", 0)),
+            },
+            "normalized": sample,
+            "calibrated": True,
+            "distance": int(best_distance),
+            "reference": best,
+        }
+
     def get_imu(self):
         return self.status.get("imu", {})
 
@@ -731,12 +836,10 @@ class _ZBotSensor:
         }
 
     def color(self):
-        item = self._find_color_item()
-        if item is None:
+        match = self.color_match()
+        if match is None:
             return None
-
-        value = item.get("value", {})
-        color = value.get("color")
+        color = match.get("color")
         if color is None:
             return None
         return str(color)
@@ -753,12 +856,19 @@ class _ZBotSensor:
             "b": int(value.get("b", 0)),
             "clear": int(value.get("clear", 0)),
         }
+
+        if self.api is not None:
+            calibrated = self.api.match_calibrated_color(self.port, rgb)
+            if calibrated is not None:
+                return calibrated
+
         return {
             "color": value.get("color"),
             "confidence": int(value.get("confidence", 0)),
             "rgb": rgb,
             "normalized": value.get("normalized"),
             "range": item.get("meta", {}).get("range"),
+            "calibrated": False,
         }
 
     def is_color(self, name):
@@ -766,6 +876,48 @@ class _ZBotSensor:
         if color is None:
             return False
         return color.lower() == str(name).lower()
+
+    def calibrate_color(self, name, samples=COLOR_CALIBRATION_DEFAULT_SAMPLES, delay_ms=COLOR_CALIBRATION_DEFAULT_DELAY_MS):
+        if self.api is None:
+            return None
+
+        count = _clamp(int(samples), 1, COLOR_CALIBRATION_MAX_SAMPLES)
+        delay = max(0, int(delay_ms))
+        totals = {"r": 0, "g": 0, "b": 0, "clear": 0}
+        got = 0
+
+        for index in range(count):
+            rgb = self.rgb()
+            if rgb is not None:
+                totals["r"] += int(rgb.get("r", 0))
+                totals["g"] += int(rgb.get("g", 0))
+                totals["b"] += int(rgb.get("b", 0))
+                totals["clear"] += int(rgb.get("clear", 0))
+                got += 1
+
+            if delay and index + 1 < count:
+                time.sleep_ms(delay)
+
+        if got <= 0:
+            return None
+
+        avg = {
+            "r": int(totals["r"] / got),
+            "g": int(totals["g"] / got),
+            "b": int(totals["b"] / got),
+            "clear": int(totals["clear"] / got),
+        }
+        return self.api.set_color_calibration(self.port, name, avg, got)
+
+    def color_calibrations(self):
+        if self.api is None:
+            return {}
+        return self.api.get_color_calibrations(self.port)
+
+    def clear_color_calibration(self, name=None):
+        if self.api is None:
+            return False
+        return self.api.clear_color_calibration(self.port, name)
 
 
 class _ZBotServo:
@@ -940,6 +1092,20 @@ class ZBot:
     def rgb(self, port):
         s = self.sensor(port)
         return s.rgb()
+
+    def calibrate_color(self, port, name, samples=COLOR_CALIBRATION_DEFAULT_SAMPLES, delay_ms=COLOR_CALIBRATION_DEFAULT_DELAY_MS):
+        s = self.sensor(port)
+        return s.calibrate_color(name, samples=samples, delay_ms=delay_ms)
+
+    def color_calibrations(self, port=None):
+        if self.api is None:
+            return {}
+        return self.api.get_color_calibrations(port)
+
+    def clear_color_calibration(self, port=None, name=None):
+        if self.api is None:
+            return False
+        return self.api.clear_color_calibration(port, name)
 
     def status(self):
         if self.api is None:
@@ -1176,7 +1342,8 @@ def _sensor_port_line(api, port):
 
         if isinstance(value, dict):
             if "r" in value and "g" in value and "b" in value:
-                color = value.get("color")
+                calibrated = api.match_calibrated_color(port, value)
+                color = calibrated.get("color") if calibrated is not None else value.get("color")
                 if color:
                     return "P{} {}".format(port, str(color)[:10])
                 return "P{} RGB".format(port)

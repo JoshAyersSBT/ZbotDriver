@@ -31,6 +31,10 @@ metadata:
 }
 ```
 
+Calibration changes the result of helpers like `zbot.color(port)` and
+`zbot.sensor(port).color_match()`. The raw snapshot still reports the built-in
+palette match so advanced code can inspect both behaviors if needed.
+
 Distance snapshots look like:
 
 ```python
