@@ -207,9 +207,9 @@ SENSOR_PORT_MODES = {
 
 MOTOR_PWM_FREQ_HZ = 20000
 MOTOR_MAX_DUTY_U16 = 40000
-# Electrical PWM polarity. Leave False for normal active-high motor driver PWM:
-# duty 0 stops the motor, larger duty values drive it.
-MOTOR_INVERT_PWM = False
+# Electrical PWM polarity for this board's active-low motor PWM input.
+# With inversion enabled, logical duty 0 maps to physical full-high/off.
+MOTOR_INVERT_PWM = True
 
 MOTOR_SCAN_POWER = 25
 MOTOR_SCAN_PULSE_MS = 250

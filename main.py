@@ -197,11 +197,10 @@ class RuntimeDriveBridge:
             error("RUNTIME_DRIVE_STEER", e)
 
     def stop(self):
-        for port in self.propulsion_ports:
-            try:
-                self.api.stop_motor(port)
-            except Exception as e:
-                error("RUNTIME_DRIVE_STOP_{}".format(port), e)
+        try:
+            self.api.stop_all()
+        except Exception as e:
+            error("RUNTIME_DRIVE_STOP_ALL", e)
 
 
 class RobotAPI:
@@ -416,7 +415,7 @@ class RobotAPI:
 
     def stop_all(self):
         motors = self.handles.get("motors", {})
-        for port in motors:
+        for port in tuple(motors.keys()):
             try:
                 self.stop_motor(port)
             except Exception as e:

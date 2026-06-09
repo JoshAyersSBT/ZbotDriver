@@ -701,6 +701,7 @@ class BleTeleop:
             if line == "STOP":
                 self._ble_motion_active = True
                 self._stop_drive()
+                self._notify("OK STOP")
                 return
 
             if line == "IMU ON":
