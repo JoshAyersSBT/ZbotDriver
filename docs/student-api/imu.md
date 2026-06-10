@@ -1,6 +1,29 @@
 # IMU
 
-Use `zbot.imu()` to read the latest IMU snapshot.
+Use `zbot.imu()` to read the latest IMU snapshot. The robot uses an
+MPU-6050, so each scaled reading contains acceleration, gyro rotation rate, and
+temperature:
+
+```python
+{
+    "ax_g": -0.291,
+    "ay_g": 0.082,
+    "az_g": 0.983,
+    "gx_dps": -0.809,
+    "gy_dps": 2.702,
+    "gz_dps": -0.099,
+    "temp_c": 43.92,
+}
+```
+
+Field meanings:
+
+- `ax_g`, `ay_g`, `az_g`: acceleration on the X, Y, and Z axes, in g.
+- `gx_dps`, `gy_dps`, `gz_dps`: rotation rate around the X, Y, and Z axes, in
+  degrees per second.
+- `temp_c`: IMU chip temperature, in degrees Celsius.
+
+`zbot.imu()` wraps this payload in a snapshot dictionary:
 
 ```python
 async def main(zbot):
@@ -13,9 +36,6 @@ async def main(zbot):
 
         if imu:
             value = imu.get("value", {})
-
-            # Field names depend on the IMU driver payload. Common fields
-            # include accel/gyro values such as ax_g, ay_g, az_g, and gz_dps.
             gz = value.get("gz_dps")
 
             if gz is not None:
@@ -24,5 +44,61 @@ async def main(zbot):
         await asyncio.sleep_ms(100)
 ```
 
-The exact fields depend on the IMU driver payload. Use the full snapshot while
-debugging to see what is available.
+## Pitch, roll, and yaw
+
+Pitch and roll can be estimated from gravity when the robot is not accelerating
+hard. Yaw is different: the MPU-6050 does not have a compass, so yaw must be
+integrated from `gz_dps`. That gives a relative heading that starts at 0 when
+your program starts and will slowly drift over time.
+
+```python
+async def main(zbot):
+    import math
+    import time
+    import uasyncio as asyncio
+
+    yaw = 0.0
+    last_ms = time.ticks_ms()
+    rad_to_deg = 180 / math.pi
+
+    while True:
+        imu = zbot.imu()
+        value = imu.get("value", {}) if imu else {}
+
+        ax = value.get("ax_g")
+        ay = value.get("ay_g")
+        az = value.get("az_g")
+        gz = value.get("gz_dps")
+
+        if ax is not None and ay is not None and az is not None:
+            roll = math.atan2(ay, az) * rad_to_deg
+            pitch = math.atan2(-ax, math.sqrt(ay * ay + az * az)) * rad_to_deg
+
+            now_ms = time.ticks_ms()
+            dt_s = time.ticks_diff(now_ms, last_ms) / 1000
+            last_ms = now_ms
+
+            if gz is not None:
+                yaw += gz * dt_s
+
+            zbot.display("IMU", "P:{:.1f} R:{:.1f} Y:{:.1f}".format(
+                pitch,
+                roll,
+                yaw,
+            ))
+
+        await asyncio.sleep_ms(50)
+```
+
+For serial or BLE debugging, the background IMU task also emits lines in this
+order:
+
+```text
+IMU ax_g ay_g az_g gx_dps gy_dps gz_dps temp_c
+```
+
+For example:
+
+```text
+IMU -0.291 0.082 0.983 -0.809 2.702 -0.099 43.92
+```
