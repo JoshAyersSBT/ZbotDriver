@@ -3,12 +3,31 @@
 The top-level driving helpers use the default runtime drive bridge.
 
 ```python
-zbot.forward(50)
-zbot.backward(30)
-zbot.drive(40, 0)
-zbot.drive(40, 25)
-zbot.tank(50, 20)
-zbot.stop()
+async def main(zbot):
+    import uasyncio as asyncio
+
+    try:
+        # Drive straight forward at 50 percent power.
+        zbot.forward(50)
+        await asyncio.sleep_ms(1000)
+
+        # Drive backward at 30 percent power.
+        zbot.backward(30)
+        await asyncio.sleep_ms(800)
+
+        # drive(throttle, turn): positive throttle moves forward,
+        # and positive turn asks the runtime bridge to steer/turn right.
+        zbot.drive(40, 25)
+        await asyncio.sleep_ms(800)
+
+        # tank(left, right) is kept for differential-style compatibility.
+        # On the default runtime bridge it is converted to throttle/turn.
+        zbot.tank(50, 20)
+        await asyncio.sleep_ms(800)
+
+    finally:
+        # The finally block runs even if the program is interrupted by an error.
+        zbot.stop()
 ```
 
 `zbot.drive(throttle, turn)` takes:

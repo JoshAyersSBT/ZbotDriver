@@ -3,10 +3,25 @@
 Use `zbot.button(id)` to read a button. Button IDs start at `1` in student code.
 
 ```python
-button = zbot.button(1)
+async def main(zbot):
+    import uasyncio as asyncio
 
-if button.pressed():
-    zbot.stop()
+    button = zbot.button(1)
+
+    try:
+        zbot.forward(25)
+
+        while True:
+            # pressed() is True for as long as the button is held down.
+            if button.pressed():
+                zbot.display("Button 1", "pressed")
+                zbot.stop()
+                break
+
+            await asyncio.sleep_ms(20)
+
+    finally:
+        zbot.stop()
 ```
 
 Button wrapper methods:
@@ -24,8 +39,16 @@ Button wrapper methods:
 Example press counter:
 
 ```python
-button = zbot.button(1)
+async def main(zbot):
+    import uasyncio as asyncio
 
-if button.was_pressed():
-    zbot.notify("Pressed {}".format(button.presses()))
+    button = zbot.button(1)
+
+    while True:
+        # was_pressed() is an edge event. It returns True once per press,
+        # which makes it better than pressed() for counters and toggles.
+        if button.was_pressed():
+            zbot.notify("Pressed {}".format(button.presses()))
+
+        await asyncio.sleep_ms(20)
 ```

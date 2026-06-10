@@ -3,11 +3,23 @@
 Use `zbot.motor(port)` to control one motor port directly.
 
 ```python
-left = zbot.motor(1)
+async def main(zbot):
+    import uasyncio as asyncio
 
-left.on(50)
-left.on(-50)
-left.off()
+    left = zbot.motor(1)
+
+    try:
+        # Positive power turns the motor forward.
+        left.on(50)
+        await asyncio.sleep_ms(800)
+
+        # Negative power reverses the motor.
+        left.on(-50)
+        await asyncio.sleep_ms(800)
+
+    finally:
+        # Stop this motor even if an exception interrupts the program.
+        left.off()
 ```
 
 Motor ports are numbered by the configured motor map. The default physical motor
@@ -25,11 +37,18 @@ Motor wrapper methods:
 Example:
 
 ```python
-m1 = zbot.motor(1)
-m1.on(75)
+async def main(zbot):
+    import uasyncio as asyncio
 
-status = m1.value()
-zbot.notify("M1 {}".format(status.get("power")))
+    m1 = zbot.motor(1)
+    m1.on(75)
+    await asyncio.sleep_ms(500)
+
+    # value() reads the latest status for the wrapper's motor port.
+    status = m1.value()
+    zbot.notify("M1 {}".format(status.get("power")))
+
+    m1.stop()
 ```
 
 You can pass a motor type label when constructing the wrapper. This is recorded

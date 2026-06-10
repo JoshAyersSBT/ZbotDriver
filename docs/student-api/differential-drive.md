@@ -4,14 +4,31 @@ Use `robot.differential.DifferentialDrive` when your robot has separate left and
 right drive motors.
 
 ```python
-from robot.differential import DifferentialDrive
+async def main(zbot):
+    import uasyncio as asyncio
+    from robot.differential import DifferentialDrive
 
-drive = DifferentialDrive(zbot, left_port=1, right_port=2)
+    # Use this helper when the robot turns by driving the left and right
+    # motors at different speeds.
+    drive = DifferentialDrive(zbot, left_port=1, right_port=2)
 
-drive.forward(50)
-drive.drive(40, 20)
-drive.tank(60, 30)
-drive.stop()
+    try:
+        # Both motors forward.
+        drive.forward(50)
+        await asyncio.sleep_ms(1000)
+
+        # Mixed driving: throttle is forward/backward, turn is left/right.
+        drive.drive(40, 20)
+        await asyncio.sleep_ms(1000)
+
+        # Tank driving: set each side directly.
+        drive.tank(60, 30)
+        await asyncio.sleep_ms(1000)
+
+        zbot.notify("drive status {}".format(drive.status()))
+
+    finally:
+        drive.stop()
 ```
 
 Differential drive methods:

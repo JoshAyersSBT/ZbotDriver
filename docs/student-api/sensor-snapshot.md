@@ -3,9 +3,25 @@
 For advanced code, use `zbot.sensors()` to get the full sensor snapshot.
 
 ```python
-sensors = zbot.sensors()
-color_item = sensors.get("color_port_2")
-tof_item = sensors.get("tof_port_1")
+async def main(zbot):
+    import uasyncio as asyncio
+
+    while True:
+        sensors = zbot.sensors()
+        color_item = sensors.get("color_port_2")
+        tof_item = sensors.get("tof_port_1")
+
+        if color_item is not None:
+            value = color_item["value"]
+            zbot.notify("color {} confidence {}".format(
+                value["color"],
+                value["confidence"],
+            ))
+
+        if tof_item is not None:
+            zbot.notify("distance {} mm".format(tof_item["value"]))
+
+        await asyncio.sleep_ms(250)
 ```
 
 Color snapshots keep backward-compatible raw RGB values and add matched color

@@ -5,8 +5,13 @@ are designed for simple scripts first, with lower-level status snapshots
 available when you need more detail.
 
 ```python
-zbot.forward(40)
-zbot.display("Driving")
+async def main(zbot):
+    import uasyncio as asyncio
+
+    zbot.display("Driving")
+    zbot.forward(40)
+    await asyncio.sleep_ms(1000)
+    zbot.stop()
 ```
 
 Each API topic has its own page:

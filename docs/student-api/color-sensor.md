@@ -4,10 +4,37 @@ Use `zbot.color(port)` to read the nearest color name from the 32-color range
 palette. This avoids needing to match an exact raw RGB value.
 
 ```python
-color = zbot.color(2)
+async def main(zbot):
+    import uasyncio as asyncio
 
-if color == "red":
-    zbot.stop()
+    floor_port = 2
+
+    try:
+        while True:
+            # color(port) returns the nearest color name, such as "red" or
+            # "blue". It returns None until the color sensor is detected.
+            color = zbot.color(floor_port)
+
+            if color is None:
+                zbot.display("Color", "waiting")
+
+            elif color == "red":
+                zbot.display("Stop line", "red")
+                zbot.stop()
+                break
+
+            elif color == "blue":
+                zbot.display("Marker", "blue")
+                zbot.forward(20)
+
+            else:
+                zbot.display("Color", color)
+                zbot.forward(30)
+
+            await asyncio.sleep_ms(100)
+
+    finally:
+        zbot.stop()
 ```
 
 The direct wrapper has the same helper:
@@ -27,13 +54,23 @@ If you need the raw color sensor values, use `zbot.rgb(port)` or
 `zbot.sensor(port).rgb()`.
 
 ```python
-rgb = zbot.rgb(2)
+async def main(zbot):
+    import uasyncio as asyncio
 
-if rgb is not None:
-    red = rgb["r"]
-    green = rgb["g"]
-    blue = rgb["b"]
-    clear = rgb["clear"]
+    port = 2
+
+    while True:
+        # Raw RGB is useful when the named color match is surprising.
+        rgb = zbot.rgb(port)
+
+        if rgb is not None:
+            red = rgb["r"]
+            green = rgb["g"]
+            blue = rgb["b"]
+            clear = rgb["clear"]
+            zbot.notify("R{} G{} B{} C{}".format(red, green, blue, clear))
+
+        await asyncio.sleep_ms(250)
 ```
 
 Raw RGB readings are useful for calibration, debugging, or checking how lighting
@@ -44,10 +81,18 @@ affects the sensor.
 Use `color_match()` when you want the matched color plus debugging details.
 
 ```python
-match = zbot.sensor(2).color_match()
+async def main(zbot):
+    import uasyncio as asyncio
 
-if match is not None:
-    zbot.notify("{} {}".format(match["color"], match["confidence"]))
+    floor = zbot.sensor(2)
+
+    while True:
+        match = floor.color_match()
+
+        if match is not None:
+            zbot.notify("{} {}".format(match["color"], match["confidence"]))
+
+        await asyncio.sleep_ms(250)
 ```
 
 `color_match()` returns a dictionary like:
@@ -92,20 +137,28 @@ surface, or sensor height. Put the sensor over a sample surface, call
 `calibrate_color()`, then use `zbot.color()` normally.
 
 ```python
-port = 2
+async def main(zbot):
+    import uasyncio as asyncio
 
-zbot.display("Calibrate", "Put on red")
-zbot.calibrate_color(port, "red")
+    port = 2
 
-zbot.display("Calibrate", "Put on blue")
-zbot.calibrate_color(port, "blue")
+    # Place the sensor over each sample before that calibration step runs.
+    zbot.display("Calibrate", "Put on red")
+    await asyncio.sleep_ms(3000)
+    zbot.calibrate_color(port, "red")
 
-while True:
-    color = zbot.color(port)
+    zbot.display("Calibrate", "Put on blue")
+    await asyncio.sleep_ms(3000)
+    zbot.calibrate_color(port, "blue")
 
-    if color == "red":
-        zbot.stop()
-        break
+    while True:
+        color = zbot.color(port)
+
+        if color == "red":
+            zbot.stop()
+            break
+
+        await asyncio.sleep_ms(100)
 ```
 
 Each calibration takes several quick RGB samples and stores the averaged

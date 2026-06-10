@@ -5,8 +5,20 @@ are designed for simple scripts first, with lower-level status snapshots
 available when you need more detail.
 
 ```python
-zbot.forward(40)
-zbot.display("Driving")
+async def main(zbot):
+    import uasyncio as asyncio
+
+    # The runtime passes the ready-to-use robot object into main().
+    # Use the zbot helpers instead of constructing RobotAPI yourself.
+    zbot.display("Hello", "ZebraBot")
+    zbot.forward(40)
+
+    # Keep async programs cooperative so background tasks can keep scanning
+    # sensors, buttons, the display, and telemetry.
+    await asyncio.sleep_ms(1000)
+
+    # Always stop at the end of a movement example.
+    zbot.stop()
 ```
 
 Programs may be written as `user_main.py` or compiled into firmware as a native
@@ -26,7 +38,11 @@ sensor programs because background sensor polling continues to run.
 Recommended workflow:
 
 - prototype behavior in `user_main.py` with `async def main(zbot)`
+- use the high-level `zbot` wrappers first: `zbot.motor()`, `zbot.servo()`,
+  `zbot.sensor()`, `zbot.button()`, `zbot.display()`
 - keep long-running Python programs cooperative with `await asyncio.sleep_ms(...)`
+- use snapshots like `zbot.status()` and `zbot.sensors()` for debugging,
+  dashboards, or advanced logic
 - move stable, performance-sensitive behavior to `user_main.c`
 - in C, put one-time setup in `main(zbot)` and repeated work in `tick(zbot)`
 - leave `user_main.py` off the device filesystem when testing native `user_main`
