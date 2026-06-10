@@ -65,6 +65,10 @@ TCA_ADDR = _cfg("TCA_ADDR", 0x70)
 MPU_ADDR = _cfg("MPU_ADDR", 0x68)
 MPU_CHANNEL = _cfg("MPU_CHANNEL", 7)
 MPU_PERIOD_MS = _cfg("MPU_PERIOD_MS", 10)
+TURN_RADIUS_DEFAULT_SPEED_MPS = _cfg("TURN_RADIUS_DEFAULT_SPEED_MPS", 0.4)
+TURN_RADIUS_DEFAULT_DRIVE_POWER = _cfg("TURN_RADIUS_DEFAULT_DRIVE_POWER", 40)
+TURN_RADIUS_DEFAULT_TURN = _cfg("TURN_RADIUS_DEFAULT_TURN", 35)
+TURN_RADIUS_MIN_YAW_DPS = _cfg("TURN_RADIUS_MIN_YAW_DPS", 2.0)
 BLE_ENABLED = _cfg("BLE_ENABLED", True)
 
 OLED_ADDR = _cfg("OLED_ADDR", 0x3C)
@@ -221,6 +225,11 @@ class RobotAPI:
             "servos": {},
             "steering": {},
             "imu": {},
+            "turn_radius": {
+                "active": False,
+                "status": "idle",
+                "radius_m": None,
+            },
             "sensors": {},
             "buttons": {},
             "services": {},
@@ -659,7 +668,115 @@ class RobotAPI:
         }
 
     def get_imu(self):
+        if self.handles.get("imu") is not None:
+            self.refresh_imu_snapshot()
         return self.status.get("imu", {})
+
+    def _turn_radius_state(self):
+        state = self.status.get("turn_radius")
+        if not isinstance(state, dict):
+            state = {
+                "active": False,
+                "status": "idle",
+                "radius_m": None,
+            }
+            self.status["turn_radius"] = state
+        return state
+
+    def _update_turn_radius(self, reading, ts_ms=None):
+        state = self._turn_radius_state()
+        if not state.get("active"):
+            return state
+
+        if ts_ms is None:
+            ts_ms = time.ticks_ms()
+
+        speed_mps = state.get("speed_mps")
+        min_yaw_dps = float(state.get("min_yaw_dps", TURN_RADIUS_MIN_YAW_DPS))
+        gz = None
+
+        if isinstance(reading, dict):
+            for key in ("gz_dps", "gyro_z_dps", "gz", "gyro_z"):
+                value = reading.get(key)
+                if isinstance(value, (int, float)):
+                    gz = float(value)
+                    break
+
+        if not isinstance(speed_mps, (int, float)):
+            state.update({
+                "status": "missing_speed",
+                "radius_m": None,
+                "yaw_rate_dps": gz,
+                "yaw_rate_rad_s": None,
+                "ts_ms": ts_ms,
+            })
+            return state
+
+        if gz is None:
+            state.update({
+                "status": "missing_imu",
+                "radius_m": None,
+                "yaw_rate_dps": None,
+                "yaw_rate_rad_s": None,
+                "ts_ms": ts_ms,
+            })
+            return state
+
+        if -min_yaw_dps < gz < min_yaw_dps:
+            state.update({
+                "status": "waiting",
+                "radius_m": None,
+                "yaw_rate_dps": gz,
+                "yaw_rate_rad_s": 0.0,
+                "ts_ms": ts_ms,
+            })
+            return state
+
+        yaw_rate_rad_s = abs(gz) * 0.017453292519943295
+        radius_m = abs(float(speed_mps)) / yaw_rate_rad_s
+        state.update({
+            "status": "ok",
+            "radius_m": radius_m,
+            "diameter_m": radius_m * 2,
+            "speed_mps": float(speed_mps),
+            "yaw_rate_dps": gz,
+            "yaw_rate_rad_s": yaw_rate_rad_s,
+            "turn_direction": "positive_z" if gz > 0 else "negative_z",
+            "ts_ms": ts_ms,
+        })
+        return state
+
+    def start_turn(self, speed_mps=TURN_RADIUS_DEFAULT_SPEED_MPS, drive_power=TURN_RADIUS_DEFAULT_DRIVE_POWER, turn=TURN_RADIUS_DEFAULT_TURN, min_yaw_dps=TURN_RADIUS_MIN_YAW_DPS):
+        state = self._turn_radius_state()
+        state.update({
+            "active": True,
+            "status": "waiting",
+            "speed_mps": float(speed_mps),
+            "drive_power": int(drive_power),
+            "turn": int(turn),
+            "min_yaw_dps": float(min_yaw_dps),
+            "radius_m": None,
+            "ts_ms": time.ticks_ms(),
+        })
+        self.drive(int(drive_power), int(turn))
+        self.refresh_imu_snapshot()
+        return state
+
+    def stop_turn(self, stop_drive=True):
+        state = self._turn_radius_state()
+        state.update({
+            "active": False,
+            "status": "idle",
+            "ts_ms": time.ticks_ms(),
+        })
+        if stop_drive:
+            self.stop()
+        return state
+
+    def get_turn_radius(self):
+        if self._turn_radius_state().get("active"):
+            self.refresh_imu_snapshot()
+        return self._turn_radius_state()
 
     def refresh_imu_snapshot(self):
         imu = self.handles.get("imu")
@@ -674,9 +791,12 @@ class RobotAPI:
             else:
                 raise AttributeError("imu object has no read_scaled/read")
 
+            ts_ms = time.ticks_ms()
+            turn_radius = self._update_turn_radius(reading, ts_ms)
             self.status["imu"] = {
                 "value": reading,
-                "ts_ms": time.ticks_ms(),
+                "ts_ms": ts_ms,
+                "turn_radius": turn_radius,
             }
             return self.status["imu"]
         except Exception as e:
@@ -1162,6 +1282,26 @@ class ZBot:
         if self.api is None:
             return {}
         return self.api.get_imu()
+
+    def start_turn(self, speed_mps=TURN_RADIUS_DEFAULT_SPEED_MPS, drive_power=TURN_RADIUS_DEFAULT_DRIVE_POWER, turn=TURN_RADIUS_DEFAULT_TURN, min_yaw_dps=TURN_RADIUS_MIN_YAW_DPS):
+        if self.api is None:
+            return {}
+        return self.api.start_turn(
+            speed_mps=speed_mps,
+            drive_power=drive_power,
+            turn=turn,
+            min_yaw_dps=min_yaw_dps,
+        )
+
+    def stop_turn(self, stop_drive=True):
+        if self.api is None:
+            return {}
+        return self.api.stop_turn(stop_drive=stop_drive)
+
+    def turn_radius(self):
+        if self.api is None:
+            return {}
+        return self.api.get_turn_radius()
 
     def motor_status(self):
         if self.api is None:

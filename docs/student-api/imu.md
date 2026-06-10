@@ -102,3 +102,75 @@ For example:
 ```text
 IMU -0.291 0.082 0.983 -0.809 2.702 -0.099 43.92
 ```
+
+## Live turn radius
+
+Turn radius needs two things:
+
+- forward speed, in meters per second
+- yaw rate from `gz_dps`, converted from degrees per second to radians per
+  second
+
+The formula is:
+
+```text
+turn_radius_m = speed_mps / yaw_rate_rad_s
+```
+
+The IMU gives yaw rate, but it does not know how fast the robot is moving
+across the floor. Start with a measured speed for the drive power you use. For
+example, if the robot travels 1 meter in 2.5 seconds at power 40, use
+`SPEED_MPS = 0.4`.
+
+`zbot.start_turn()` starts the runtime drive bridge turning and turns on live
+radius measurement. `zbot.turn_radius()` returns the latest radius state.
+
+```python
+async def main(zbot):
+    import uasyncio as asyncio
+
+    # Replace this with your button/BLE/program trigger.
+    zbot.start_turn(
+        speed_mps=0.4,
+        drive_power=40,
+        turn=35,
+    )
+
+    try:
+        while True:
+            turn = zbot.turn_radius()
+
+            if turn.get("status") == "ok":
+                zbot.say(
+                    "Turn radius",
+                    "{:.2f} m".format(turn["radius_m"]),
+                    "yaw {:.1f} dps".format(turn["yaw_rate_dps"]),
+                )
+            else:
+                zbot.say("Turn radius", turn.get("status", "waiting"))
+
+            await asyncio.sleep_ms(100)
+
+    finally:
+        zbot.stop_turn()
+```
+
+For better numbers, measure `SPEED_MPS` for the same battery level, surface,
+drive power, and robot build.
+
+`zbot.turn_radius()` returns a dictionary like:
+
+```python
+{
+    "active": True,
+    "status": "ok",
+    "radius_m": 1.24,
+    "diameter_m": 2.48,
+    "speed_mps": 0.4,
+    "yaw_rate_dps": 18.5,
+    "yaw_rate_rad_s": 0.323,
+}
+```
+
+When the robot is not turning fast enough, `status` is `"waiting"` and
+`radius_m` is `None`.
