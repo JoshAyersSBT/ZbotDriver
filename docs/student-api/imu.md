@@ -30,8 +30,8 @@ async def main(zbot):
     import uasyncio as asyncio
 
     while True:
-        # imu() returns the latest snapshot collected by the background IMU
-        # task. It may be empty during startup or if no IMU is configured.
+        # imu() refreshes and returns the latest IMU snapshot.
+        # It may be empty during startup or if no IMU is configured.
         imu = zbot.imu()
 
         if imu:
@@ -174,3 +174,49 @@ drive power, and robot build.
 
 When the robot is not turning fast enough, `status` is `"waiting"` and
 `radius_m` is `None`.
+
+## Turn 90 degrees
+
+To turn a specific angle, integrate the Z gyro rate over time. The example
+below turns until the robot has rotated about 90 degrees, then stops.
+
+```python
+async def main(zbot):
+    import time
+    import uasyncio as asyncio
+
+    TARGET_DEG = 90
+    DRIVE_POWER = 35
+    TURN = 45
+    GYRO_DEADBAND_DPS = 1.0
+
+    heading = 0.0
+    last_ms = time.ticks_ms()
+
+    zbot.drive(DRIVE_POWER, TURN)
+
+    try:
+        while abs(heading) < TARGET_DEG:
+            imu = zbot.imu()
+            value = imu.get("value", {}) if imu else {}
+            gz = value.get("gz_dps")
+
+            now_ms = time.ticks_ms()
+            dt_s = time.ticks_diff(now_ms, last_ms) / 1000
+            last_ms = now_ms
+
+            if gz is not None:
+                if -GYRO_DEADBAND_DPS < gz < GYRO_DEADBAND_DPS:
+                    gz = 0.0
+                heading += gz * dt_s
+
+            zbot.say("Turning", "{:.1f} deg".format(heading))
+            await asyncio.sleep_ms(20)
+
+    finally:
+        zbot.stop()
+        zbot.say("Turn done", "{:.1f} deg".format(heading))
+```
+
+Use a negative `TURN` value to turn the other direction. If your robot tends to
+overshoot, lower `DRIVE_POWER` or `TURN`, or stop a few degrees early.
