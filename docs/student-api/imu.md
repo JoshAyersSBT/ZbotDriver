@@ -186,42 +186,62 @@ async def turn_degrees(zbot, degrees, motor_speed):
     import time
     import uasyncio as asyncio
 
+    # Ignore tiny gyro readings so sensor noise does not look like turning.
     GYRO_DEADBAND_DPS = 1.0
 
+    # heading stores how far the robot has turned since this function started.
     heading = 0.0
     last_ms = time.ticks_ms()
+
+    # The target is always positive. The sign of degrees controls direction.
     target = abs(float(degrees))
     direction = 1 if degrees >= 0 else -1
+
+    # Clamp motor speed to the normal zbot.drive() range.
     power = min(abs(int(motor_speed)), 100)
     turn = direction * power
 
+    # Nothing to do if the target angle or speed is zero.
     if target == 0 or power == 0:
         return 0.0
 
+    # Start driving in an arc. Positive turn and negative turn rotate opposite
+    # directions.
     zbot.drive(power, turn)
 
     try:
         while abs(heading) < target:
+            # Read the latest IMU snapshot and pull out gyro Z. gz_dps is the
+            # robot's rotation rate around the vertical axis, in deg/sec.
             imu = zbot.imu()
             value = imu.get("value", {}) if imu else {}
             gz = value.get("gz_dps")
 
+            # Measure elapsed time since the previous loop. Multiplying
+            # deg/sec by seconds gives degrees turned during this loop.
             now_ms = time.ticks_ms()
             dt_s = time.ticks_diff(now_ms, last_ms) / 1000
             last_ms = now_ms
 
             if gz is not None:
+                # Drop very small readings to reduce drift while the robot is
+                # barely turning.
                 if -GYRO_DEADBAND_DPS < gz < GYRO_DEADBAND_DPS:
                     gz = 0.0
+
+                # Add this loop's rotation to the running heading estimate.
                 heading += gz * dt_s
 
+            # Show progress on the OLED while the turn is running.
             zbot.say("Turning", "{:.1f} deg".format(heading))
             await asyncio.sleep_ms(20)
 
     finally:
+        # Always stop, even if the program is interrupted by an error.
         zbot.stop()
         zbot.say("Turn done", "{:.1f} deg".format(heading))
 
+    # Return the measured turn amount so user code can log or check it.
     return heading
 
 
