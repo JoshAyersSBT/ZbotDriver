@@ -175,28 +175,33 @@ drive power, and robot build.
 When the robot is not turning fast enough, `status` is `"waiting"` and
 `radius_m` is `None`.
 
-## Turn 90 degrees
+## Turn a set number of degrees
 
-To turn a specific angle, integrate the Z gyro rate over time. The example
-below turns until the robot has rotated about 90 degrees, then stops.
+To turn a specific angle, integrate the Z gyro rate over time. This helper
+takes the target angle in degrees and the motor speed to use while turning.
+Positive degrees turn one direction; negative degrees turn the other direction.
 
 ```python
-async def main(zbot):
+async def turn_degrees(zbot, degrees, motor_speed):
     import time
     import uasyncio as asyncio
 
-    TARGET_DEG = 90
-    DRIVE_POWER = 35
-    TURN = 45
     GYRO_DEADBAND_DPS = 1.0
 
     heading = 0.0
     last_ms = time.ticks_ms()
+    target = abs(float(degrees))
+    direction = 1 if degrees >= 0 else -1
+    power = min(abs(int(motor_speed)), 100)
+    turn = direction * power
 
-    zbot.drive(DRIVE_POWER, TURN)
+    if target == 0 or power == 0:
+        return 0.0
+
+    zbot.drive(power, turn)
 
     try:
-        while abs(heading) < TARGET_DEG:
+        while abs(heading) < target:
             imu = zbot.imu()
             value = imu.get("value", {}) if imu else {}
             gz = value.get("gz_dps")
@@ -216,7 +221,17 @@ async def main(zbot):
     finally:
         zbot.stop()
         zbot.say("Turn done", "{:.1f} deg".format(heading))
+
+    return heading
+
+
+async def main(zbot):
+    # Turn right about 90 degrees at speed 35.
+    await turn_degrees(zbot, 90, 35)
+
+    # Turn left about 45 degrees at speed 30.
+    await turn_degrees(zbot, -45, 30)
 ```
 
-Use a negative `TURN` value to turn the other direction. If your robot tends to
-overshoot, lower `DRIVE_POWER` or `TURN`, or stop a few degrees early.
+If your robot tends to overshoot, lower `motor_speed` or stop a few degrees
+early.
