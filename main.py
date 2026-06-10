@@ -781,6 +781,15 @@ class RobotAPI:
     def refresh_imu_snapshot(self):
         imu = self.handles.get("imu")
         if imu is None:
+            state = self._turn_radius_state()
+            if state.get("active"):
+                state.update({
+                    "status": "missing_imu",
+                    "radius_m": None,
+                    "yaw_rate_dps": None,
+                    "yaw_rate_rad_s": None,
+                    "ts_ms": time.ticks_ms(),
+                })
             return None
 
         try:
@@ -800,9 +809,19 @@ class RobotAPI:
             }
             return self.status["imu"]
         except Exception as e:
+            state = self._turn_radius_state()
+            if state.get("active"):
+                state.update({
+                    "status": "missing_imu",
+                    "radius_m": None,
+                    "yaw_rate_dps": None,
+                    "yaw_rate_rad_s": None,
+                    "ts_ms": time.ticks_ms(),
+                })
             self.status["imu"] = {
                 "error": repr(e),
                 "ts_ms": time.ticks_ms(),
+                "turn_radius": state,
             }
             return None
 

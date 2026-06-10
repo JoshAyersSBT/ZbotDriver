@@ -186,6 +186,13 @@ MPU_ADDR = 0x68
 MPU_CHANNEL = 7
 MPU_PERIOD_MS = 10
 
+# Live turn-radius helper defaults. Measure SPEED_MPS for your robot by driving
+# a known distance at the default power and dividing distance by elapsed time.
+TURN_RADIUS_DEFAULT_SPEED_MPS = 0.4
+TURN_RADIUS_DEFAULT_DRIVE_POWER = 40
+TURN_RADIUS_DEFAULT_TURN = 35
+TURN_RADIUS_MIN_YAW_DPS = 2.0
+
 
 # ============================================================
 # SENSOR PORT DATA PINS
