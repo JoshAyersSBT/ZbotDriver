@@ -1268,6 +1268,10 @@ class ZBot:
         s = self.sensor(port)
         return s.rgb()
 
+    def color_match(self, port):
+        s = self.sensor(port)
+        return s.color_match()
+
     def calibrate_color(self, port, name, samples=COLOR_CALIBRATION_DEFAULT_SAMPLES, delay_ms=COLOR_CALIBRATION_DEFAULT_DELAY_MS):
         s = self.sensor(port)
         return s.calibrate_color(name, samples=samples, delay_ms=delay_ms)
