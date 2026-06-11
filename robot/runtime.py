@@ -1,3 +1,4 @@
+import os
 import time
 import uasyncio as asyncio
 from machine import I2C, Pin
@@ -163,6 +164,53 @@ def _relative_channel_distance(a, b):
 
 def _raw_rgb_total(rgb):
     return int(rgb.get("r", 0)) + int(rgb.get("g", 0)) + int(rgb.get("b", 0))
+
+
+def _calibration_label(item, fallback=None):
+    if isinstance(item, dict):
+        value = item.get("name", item.get("color", fallback))
+    else:
+        value = fallback
+    if value is None:
+        return None
+    label = str(value).strip().lower()
+    return label if label else None
+
+
+def _calibration_rgb(item):
+    if not isinstance(item, dict):
+        return None
+
+    rgb = item.get("rgb", item)
+    if not isinstance(rgb, dict):
+        return None
+
+    if not all(k in rgb for k in ("r", "g", "b")):
+        normalized = item.get("normalized")
+        if not isinstance(normalized, dict):
+            return None
+
+        total = (
+            int(normalized.get("r", 0))
+            + int(normalized.get("g", 0))
+            + int(normalized.get("b", 0))
+        )
+        scale = 255
+        if total > 384:
+            scale = 1000
+        return {
+            "r": int(int(normalized.get("r", 0)) * 255 / scale),
+            "g": int(int(normalized.get("g", 0)) * 255 / scale),
+            "b": int(int(normalized.get("b", 0)) * 255 / scale),
+            "clear": int(item.get("clear", 0)),
+        }
+
+    return {
+        "r": int(rgb.get("r", 0)),
+        "g": int(rgb.get("g", 0)),
+        "b": int(rgb.get("b", 0)),
+        "clear": int(rgb.get("clear", item.get("clear", 0))),
+    }
 
 
 class RuntimeDriveBridge:
@@ -578,6 +626,43 @@ class RobotAPI:
         self.color_calibrations.setdefault(port, {})[label] = item
         return item
 
+    def load_color_calibrations(self, calibrations):
+        if not calibrations:
+            return 0
+
+        count = 0
+        if isinstance(calibrations, dict):
+            port_items = calibrations.items()
+        else:
+            port_items = ()
+
+        for port, entries in port_items:
+            try:
+                port_i = int(port)
+            except Exception:
+                continue
+
+            if isinstance(entries, dict):
+                entry_iter = entries.items()
+            elif isinstance(entries, (list, tuple)):
+                entry_iter = ((None, item) for item in entries)
+            else:
+                entry_iter = ()
+
+            for fallback, item in entry_iter:
+                label = _calibration_label(item, fallback=fallback)
+                rgb = _calibration_rgb(item)
+                if label is None or rgb is None:
+                    continue
+
+                samples = 1
+                if isinstance(item, dict):
+                    samples = int(item.get("samples", 1))
+                self.set_color_calibration(port_i, label, rgb, samples=samples)
+                count += 1
+
+        return count
+
     def clear_color_calibration(self, port=None, name=None):
         if port is None:
             self.color_calibrations = {}
@@ -947,6 +1032,52 @@ async def _guarded_task(api, name, coro):
 
 def _create_guarded_task(api, name, coro):
     return asyncio.create_task(_guarded_task(api, name, coro))
+
+
+def _color_calibration_file_exists():
+    paths = ("robot/color_calibration.py", "/robot/color_calibration.py")
+    for path in paths:
+        try:
+            os.stat(path)
+            return True
+        except OSError:
+            pass
+        except Exception:
+            pass
+    return False
+
+
+def _load_color_calibration_file(api):
+    if api is None:
+        return 0
+
+    if not _color_calibration_file_exists():
+        return 0
+
+    try:
+        module = __import__(
+            "robot.color_calibration",
+            None,
+            None,
+            ("COLOR_CALIBRATIONS",),
+        )
+    except ImportError as e:
+        error("COLOR_CALIBRATION_IMPORT", e)
+        return 0
+    except Exception as e:
+        error("COLOR_CALIBRATION_IMPORT", e)
+        return 0
+
+    try:
+        calibrations = getattr(module, "COLOR_CALIBRATIONS", None)
+        count = api.load_color_calibrations(calibrations)
+        if count:
+            info("COLOR calibration loaded {}".format(count))
+            state("COLOR", "calibration_loaded")
+        return count
+    except Exception as e:
+        error("COLOR_CALIBRATION_LOAD", e)
+        return 0
 
 
 def _start_user_main_task(api):
@@ -1436,6 +1567,7 @@ async def main():
     api = RobotAPI()
     API = api
     zbot = _ensure_zbot_api()(api)
+    _load_color_calibration_file(api)
 
     info("BOOT init")
     state("BOOT", "start")
