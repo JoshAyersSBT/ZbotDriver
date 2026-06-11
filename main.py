@@ -30,6 +30,11 @@ COLOR_BLACK_CLEAR_MAX = 120
 
 API = None
 zbot = None
+ZBot = None
+_ZBotButton = None
+_ZBotMotor = None
+_ZBotSensor = None
+_ZBotServo = None
 _BOOT_SPINNER_FRAMES = ("|", "/", "-", "\\")
 _boot_spinner_index = 0
 
@@ -161,22 +166,6 @@ def _raw_rgb_total(rgb):
 
 
 class RuntimeDriveBridge:
-    """
-    Generic boot/runtime drive bridge used by BLE teleop and legacy calls.
-
-    This intentionally does not define the student's drive model.
-    It only provides a minimal motion bridge so:
-      - BLE teleop can command the robot
-      - legacy helpers still have a neutral fallback
-
-    Semantics:
-      throttle: -100..100
-      turn:     -100..100
-
-    Behavior:
-      - all propulsion motors receive the same signed throttle
-      - steering servo is mapped around center using turn
-    """
     def __init__(self, api, propulsion_ports=None, steer_center_deg=DEFAULT_STEER_CENTER_DEG, steer_range_deg=DEFAULT_STEER_RANGE_DEG):
         self.api = api
         ports = propulsion_ports if propulsion_ports is not None else ACTIVE_MOTOR_PORTS
@@ -208,15 +197,6 @@ class RuntimeDriveBridge:
 
 
 class RobotAPI:
-    """
-    Shared low-level runtime API exposed to user programs and internal services.
-
-    This API intentionally avoids hard-coding a student-facing drive model.
-    User code should compose motion behavior in robot modules such as:
-      - robot.ackermann
-      - robot.differential
-    """
-
     def __init__(self):
         self.status = {
             "boot": {"state": "init", "safe_mode": False},
@@ -273,6 +253,7 @@ class RobotAPI:
         return self.status.get("buttons", {})
 
     def button(self, button_id=1):
+        _ensure_zbot_api()
         manager = self.handles.get("button_manager")
         if manager is None:
             return _ZBotButton(None, button_id)
@@ -862,505 +843,34 @@ class RobotAPI:
         return self.show_lines(*lines)
 
     def sensor(self, port):
+        _ensure_zbot_api()
         return _ZBotSensor(self, port)
 
     def motor(self, port, motor_type="DC"):
+        _ensure_zbot_api()
         return _ZBotMotor(self, port, motor_type)
 
     def servo(self, port=1):
+        _ensure_zbot_api()
         return _ZBotServo(self, port)
 
 
-class _ZBotButton:
-    def __init__(self, api, button_id=1):
-        self.api = api
-        self.button_id = int(button_id)
-
-    def _button(self):
-        if self.api is None:
-            return None
-        manager = self.api.get_handle("button_manager")
-        if manager is None:
-            return None
-        return manager.button(self.button_id)
-
-    def read(self):
-        button = self._button()
-        return False if button is None else button.read()
-
-    def value(self):
-        button = self._button()
-        return 0 if button is None else button.value()
-
-    def pressed(self):
-        button = self._button()
-        return False if button is None else button.pressed()
-
-    def released(self):
-        button = self._button()
-        return True if button is None else button.released()
-
-    def was_pressed(self):
-        button = self._button()
-        return False if button is None else button.was_pressed()
-
-    def was_released(self):
-        button = self._button()
-        return False if button is None else button.was_released()
-
-    def presses(self, reset=False):
-        button = self._button()
-        return 0 if button is None else button.presses(reset=reset)
-
-    def releases(self, reset=False):
-        button = self._button()
-        return 0 if button is None else button.releases(reset=reset)
-
-    def snapshot(self):
-        button = self._button()
-        if button is None:
-            return {"id": self.button_id, "available": False, "pressed": False}
-        return button.snapshot()
-
-
-class _ZBotSensor:
-    def __init__(self, api, port):
-        self.api = api
-        self.port = int(port)
-
-    def _find_snapshot_value(self):
-        if self.api is None:
-            return None
-
-        sensors = self.api.get_sensor_snapshot()
-
-        key = "tof_port_{}".format(self.port)
-        item = sensors.get(key)
-        if isinstance(item, dict):
-            value = item.get("value")
-            if isinstance(value, (int, float)):
-                return int(value)
-
-        fallback_keys = (
-            "port{}_tof".format(self.port),
-            "tof_{}".format(self.port),
-            "sensor_port_{}".format(self.port),
+def _ensure_zbot_api():
+    global ZBot, _ZBotButton, _ZBotMotor, _ZBotSensor, _ZBotServo
+    if ZBot is None:
+        from robot.zbot_api import (
+            ZBot as _ZBot,
+            _ZBotButton as _Button,
+            _ZBotMotor as _Motor,
+            _ZBotSensor as _Sensor,
+            _ZBotServo as _Servo,
         )
-
-        for key in fallback_keys:
-            item = sensors.get(key)
-            if isinstance(item, dict):
-                value = item.get("value")
-                if isinstance(value, (int, float)):
-                    return int(value)
-
-        for key, item in sensors.items():
-            if not isinstance(item, dict):
-                continue
-
-            value = item.get("value")
-            if not isinstance(value, (int, float)):
-                continue
-
-            meta = item.get("meta", {})
-            key_s = str(key).lower()
-            meta_s = str(meta).lower()
-
-            if "tof" in key_s and str(self.port) in key_s:
-                return int(value)
-
-            if "tof" in meta_s and str(self.port) in meta_s:
-                return int(value)
-
-        return None
-
-    def _find_color_item(self):
-        if self.api is None:
-            return None
-
-        sensors = self.api.get_sensor_snapshot()
-        candidates = (
-            "color_port_{}".format(self.port),
-            "port{}_color".format(self.port),
-        )
-
-        for key in candidates:
-            item = sensors.get(key)
-            if isinstance(item, dict) and isinstance(item.get("value"), dict):
-                return item
-
-        return None
-
-    def read(self):
-        return self._find_snapshot_value()
-
-    def rgb(self):
-        item = self._find_color_item()
-        if item is None:
-            return None
-
-        value = item.get("value", {})
-        if not all(k in value for k in ("r", "g", "b")):
-            return None
-
-        return {
-            "r": int(value.get("r", 0)),
-            "g": int(value.get("g", 0)),
-            "b": int(value.get("b", 0)),
-            "clear": int(value.get("clear", 0)),
-        }
-
-    def color(self):
-        match = self.color_match()
-        if match is None:
-            return None
-        color = match.get("color")
-        if color is None:
-            return None
-        return str(color)
-
-    def color_match(self):
-        item = self._find_color_item()
-        if item is None:
-            return None
-
-        value = item.get("value", {})
-        rgb = {
-            "r": int(value.get("r", 0)),
-            "g": int(value.get("g", 0)),
-            "b": int(value.get("b", 0)),
-            "clear": int(value.get("clear", 0)),
-        }
-
-        if self.api is not None:
-            calibrated = self.api.match_calibrated_color(self.port, rgb)
-            if calibrated is not None:
-                return calibrated
-
-        return {
-            "color": value.get("color"),
-            "confidence": int(value.get("confidence", 0)),
-            "rgb": rgb,
-            "normalized": value.get("normalized"),
-            "range": item.get("meta", {}).get("range"),
-            "calibrated": False,
-        }
-
-    def is_color(self, name):
-        color = self.color()
-        if color is None:
-            return False
-        return color.lower() == str(name).lower()
-
-    def calibrate_color(self, name, samples=COLOR_CALIBRATION_DEFAULT_SAMPLES, delay_ms=COLOR_CALIBRATION_DEFAULT_DELAY_MS):
-        if self.api is None:
-            return None
-
-        count = _clamp(int(samples), 1, COLOR_CALIBRATION_MAX_SAMPLES)
-        delay = max(0, int(delay_ms))
-        totals = {"r": 0, "g": 0, "b": 0, "clear": 0}
-        got = 0
-
-        for index in range(count):
-            rgb = self.rgb()
-            if rgb is not None:
-                totals["r"] += int(rgb.get("r", 0))
-                totals["g"] += int(rgb.get("g", 0))
-                totals["b"] += int(rgb.get("b", 0))
-                totals["clear"] += int(rgb.get("clear", 0))
-                got += 1
-
-            if delay and index + 1 < count:
-                time.sleep_ms(delay)
-
-        if got <= 0:
-            return None
-
-        avg = {
-            "r": int(totals["r"] / got),
-            "g": int(totals["g"] / got),
-            "b": int(totals["b"] / got),
-            "clear": int(totals["clear"] / got),
-        }
-        return self.api.set_color_calibration(self.port, name, avg, got)
-
-    def color_calibrations(self):
-        if self.api is None:
-            return {}
-        return self.api.get_color_calibrations(self.port)
-
-    def clear_color_calibration(self, name=None):
-        if self.api is None:
-            return False
-        return self.api.clear_color_calibration(self.port, name)
-
-
-class _ZBotServo:
-    def __init__(self, api, port=1):
-        self.api = api
-        self.port = int(port)
-
-    def angle(self, deg):
-        if self.api is None:
-            return False
-        self.api.set_servo(self.port, int(deg))
-        return True
-
-    def write_angle(self, deg):
-        return self.angle(deg)
-
-    def center(self, center_angle=None):
-        if self.api is None:
-            return False
-        if center_angle is None:
-            self.api.center_servo(self.port)
-        else:
-            self.api.set_servo(self.port, int(center_angle))
-        return True
-
-
-class _ZBotMotor:
-    def __init__(self, api, port, motor_type="DC"):
-        self.api = api
-        self.port = int(port)
-        self.motor_type = str(motor_type)
-        self._publish_meta()
-
-    def _publish_meta(self):
-        if self.api is None:
-            return
-        try:
-            if "student_motors" not in self.api.status:
-                self.api.status["student_motors"] = {}
-            self.api.status["student_motors"][self.port] = {
-                "type": self.motor_type,
-                "ts_ms": time.ticks_ms(),
-            }
-        except Exception:
-            pass
-
-    def on(self, power=50):
-        if self.api is None:
-            return False
-        self._publish_meta()
-        self.api.set_motor(self.port, int(power))
-        return True
-
-    def off(self):
-        if self.api is None:
-            return False
-        self.api.stop_motor(self.port)
-        return True
-
-    def stop(self):
-        return self.off()
-
-    def speed(self, power):
-        return self.on(power)
-
-    def set(self, power):
-        return self.on(power)
-
-    def value(self):
-        if self.api is None:
-            return None
-        try:
-            return self.api.get_motor_status().get(self.port, {})
-        except Exception:
-            return None
-
-
-class ZBot:
-    """
-    Student-facing neutral wrapper.
-
-    This wrapper exposes primitives only. Drive-model decisions belong in
-    user modules (robot.ackermann, robot.differential, etc).
-    """
-    def __init__(self, api=None):
-        self.api = api
-        self._motor_wrappers = {}
-        self._servo_wrappers = {}
-        self._button_wrappers = {}
-
-    def bind(self, api):
-        self.api = api
-        return self
-
-    def ready(self):
-        return self.api is not None and bool(self.api.status["system"].get("ready", False))
-
-    def stop(self):
-        if self.api is None:
-            return False
-        self.api.stop_all()
-        return True
-
-    def steer(self, angle):
-        if self.api is None:
-            return False
-        self.api.set_steering(int(angle))
-        return True
-
-    def display(self, line1="", line2="", line3="", line4=""):
-        if self.api is None:
-            return False
-        return self.api.display(line1, line2, line3, line4)
-
-    def say(self, line1="", line2="", line3="", line4=""):
-        return self.display(line1, line2, line3, line4)
-
-    def notify(self, text):
-        if self.api is None:
-            return False
-        return self.api.notify(str(text))
-
-    def button(self, button_id=1):
-        key = int(button_id)
-        if self.api is None:
-            return _ZBotButton(None, button_id)
-
-        if key not in self._button_wrappers:
-            self._button_wrappers[key] = _ZBotButton(self.api, button_id)
-
-        return self._button_wrappers[key]
-
-    def buttons(self, button_id=1):
-        return self.button(button_id)
-
-    def servo(self, port=1):
-        key = int(port)
-        if self.api is None:
-            return _ZBotServo(None, port)
-
-        if key not in self._servo_wrappers:
-            self._servo_wrappers[key] = _ZBotServo(self.api, port)
-
-        return self._servo_wrappers[key]
-
-    def motor(self, port, motor_type="DC"):
-        key = (int(port), str(motor_type))
-        if self.api is None:
-            return _ZBotMotor(None, port, motor_type)
-
-        if key not in self._motor_wrappers:
-            self._motor_wrappers[key] = _ZBotMotor(self.api, port, motor_type)
-
-        return self._motor_wrappers[key]
-
-    def motors(self, port, motor_type="DC"):
-        return self.motor(port, motor_type)
-
-    def sensor(self, port):
-        if self.api is None:
-            return _ZBotSensor(None, port)
-        return _ZBotSensor(self.api, port)
-
-    def tof(self, port):
-        s = self.sensor(port)
-        return s.read()
-
-    def color(self, port):
-        s = self.sensor(port)
-        return s.color()
-
-    def rgb(self, port):
-        s = self.sensor(port)
-        return s.rgb()
-
-    def color_match(self, port):
-        s = self.sensor(port)
-        return s.color_match()
-
-    def calibrate_color(self, port, name, samples=COLOR_CALIBRATION_DEFAULT_SAMPLES, delay_ms=COLOR_CALIBRATION_DEFAULT_DELAY_MS):
-        s = self.sensor(port)
-        return s.calibrate_color(name, samples=samples, delay_ms=delay_ms)
-
-    def color_calibrations(self, port=None):
-        if self.api is None:
-            return {}
-        return self.api.get_color_calibrations(port)
-
-    def clear_color_calibration(self, port=None, name=None):
-        if self.api is None:
-            return False
-        return self.api.clear_color_calibration(port, name)
-
-    def status(self):
-        if self.api is None:
-            return {}
-        return self.api.get_status()
-
-    def sensors(self):
-        if self.api is None:
-            return {}
-        return self.api.get_sensor_snapshot()
-
-    def button_status(self):
-        if self.api is None:
-            return {}
-        return self.api.get_button_status()
-
-    def imu(self):
-        if self.api is None:
-            return {}
-        return self.api.get_imu()
-
-    def start_turn(self, speed_mps=TURN_RADIUS_DEFAULT_SPEED_MPS, drive_power=TURN_RADIUS_DEFAULT_DRIVE_POWER, turn=TURN_RADIUS_DEFAULT_TURN, min_yaw_dps=TURN_RADIUS_MIN_YAW_DPS):
-        if self.api is None:
-            return {}
-        return self.api.start_turn(
-            speed_mps=speed_mps,
-            drive_power=drive_power,
-            turn=turn,
-            min_yaw_dps=min_yaw_dps,
-        )
-
-    def stop_turn(self, stop_drive=True):
-        if self.api is None:
-            return {}
-        return self.api.stop_turn(stop_drive=stop_drive)
-
-    def turn_radius(self):
-        if self.api is None:
-            return {}
-        return self.api.get_turn_radius()
-
-    def motor_status(self):
-        if self.api is None:
-            return {}
-        return self.api.get_motor_status()
-
-    def motor_feedback(self):
-        if self.api is None:
-            return {}
-        return self.api.get_motor_feedback()
-
-    def servo_status(self):
-        if self.api is None:
-            return {}
-        return self.api.get_servo_status()
-
-    # Backward-compatible motion shims. They use the neutral runtime bridge.
-    def drive(self, throttle, turn=0):
-        if self.api is None:
-            return False
-        self.api.drive(int(throttle), int(turn))
-        return True
-
-    def forward(self, power=50):
-        return self.drive(abs(int(power)), 0)
-
-    def backward(self, power=50):
-        return self.drive(-abs(int(power)), 0)
-
-    def tank(self, left_power, right_power):
-        left_power = int(left_power)
-        right_power = int(right_power)
-        throttle = (left_power + right_power) // 2
-        turn = (left_power - right_power) // 2
-        return self.drive(throttle, turn)
-
+        ZBot = _ZBot
+        _ZBotButton = _Button
+        _ZBotMotor = _Motor
+        _ZBotSensor = _Sensor
+        _ZBotServo = _Servo
+    return ZBot
 
 def get_api():
     return API
@@ -1445,7 +955,7 @@ def _start_user_main_task(api):
     if api.tasks.get("user_main") is not None:
         return False
     api.register_task("user_main", _create_guarded_task(api, "user_main", _run_user_program(api)))
-    info("BOOT: user_main task started")
+    info("BOOT user")
     state("TASK", "user_main_started")
     return True
 
@@ -1727,7 +1237,7 @@ def _attach_ble_teleop(api, teleop, imu=None, start_imu=True):
             try:
                 api.register_task("imu", _create_guarded_task(api, "imu", imu_task_fn()))
                 api.register_handle("teleop_imu_task_started", True)
-                info("BOOT: IMU task started")
+                info("BOOT imu task")
                 state("TASK", "imu_started")
             except Exception as e:
                 error("IMU_TASK_START", e)
@@ -1741,7 +1251,7 @@ async def _deferred_ble_start_task(api, drive, steering, imu, oled):
             return
 
         try:
-            info("BOOT: deferred BLE init attempt {}".format(attempt))
+            info("BOOT ble retry {}".format(attempt))
             from robot.ble_teleop import BleTeleop
 
             teleop = BleTeleop(
@@ -1752,7 +1262,7 @@ async def _deferred_ble_start_task(api, drive, steering, imu, oled):
                 oled=oled,
             )
             _attach_ble_teleop(api, teleop, imu=imu)
-            info("BOOT: BLE teleop initialized")
+            info("BOOT ble ok")
             state("BOOT", "ble_ok")
             return
         except Exception as e:
@@ -1760,7 +1270,7 @@ async def _deferred_ble_start_task(api, drive, steering, imu, oled):
             state("BOOT", "ble_retry_{}".format(attempt))
             await asyncio.sleep_ms(5000)
 
-    warn("BOOT: deferred BLE init exhausted")
+    warn("BOOT ble fail")
     state("BOOT", "ble_failed")
 
 
@@ -1824,7 +1334,7 @@ async def _run_user_program(api):
     api.status["user"]["file"] = user_file
 
     if user_fn is None:
-        warn("USER: user_main.main missing")
+        warn("USER main missing")
         api.status["user"]["last_error"] = "user_main.main missing"
 
         teleop = api.get_handle("teleop")
@@ -1841,7 +1351,7 @@ async def _run_user_program(api):
     teleop = api.get_handle("teleop")
     if teleop is not None:
         try:
-            teleop.notify_line("INFO USER {} {}.main starting".format(user_kind, user_main_name))
+            teleop.notify_line("INFO USER {} {} start".format(user_kind, user_main_name))
         except Exception:
             pass
 
@@ -1925,9 +1435,9 @@ async def main():
 
     api = RobotAPI()
     API = api
-    zbot = ZBot(api)
+    zbot = _ensure_zbot_api()(api)
 
-    info("BOOT: starting robot init")
+    info("BOOT init")
     state("BOOT", "start")
     api.status["boot"]["state"] = "starting"
 
@@ -1960,9 +1470,9 @@ async def main():
         api.register_handle("motors", motors)
         api.register_handle("motor_port_map", dict(MOTOR_PORT_MAP))
 
-        info("BOOT: motors initialized")
-        diag("DRIVE LEFT PWM={} DIR={} ENC={}".format(LEFT_PWM, LEFT_DIR, LEFT_ENC))
-        diag("DRIVE RIGHT PWM={} DIR={} ENC={}".format(RIGHT_PWM, RIGHT_DIR, RIGHT_ENC))
+        info("BOOT motors ok")
+        diag("DRV L {} {} {}".format(LEFT_PWM, LEFT_DIR, LEFT_ENC))
+        diag("DRV R {} {} {}".format(RIGHT_PWM, RIGHT_DIR, RIGHT_ENC))
         state("BOOT", "motors_ok")
 
     except Exception as e:
@@ -1983,7 +1493,7 @@ async def main():
 
         api.register_handle("steer_port", int(steer_port))
         api.status["steering"] = {"angle": None, "ts_ms": time.ticks_ms(), "available": True}
-        info("BOOT: servo ports registered")
+        info("BOOT servos ok")
         state("BOOT", "servo_ports_ok")
 
         try:
@@ -1997,11 +1507,11 @@ async def main():
             }
         except Exception as center_err:
             error("SERVO_CENTER_INIT", center_err)
-            warn("BOOT: steering servo will remain lazy until first use")
+            warn("BOOT steer lazy")
 
     except Exception as e:
         error("SERVO_INIT", e)
-        warn("BOOT: continuing without servos")
+        warn("BOOT no servos")
         servos = {}
         steer = None
         api.register_handle("servos", servos)
@@ -2028,13 +1538,13 @@ async def main():
         )
         button_manager.start()
         api.register_handle("button_manager", button_manager)
-        info("BOOT: buttons initialized")
+        info("BOOT buttons ok")
         diag("BUTTONS {}".format(button_manager.snapshot()))
         state("BOOT", "buttons_ok")
     except Exception as e:
         button_manager = None
         error("BUTTON_INIT", e)
-        warn("BOOT: continuing without buttons")
+        warn("BOOT no buttons")
         state("BOOT", "buttons_failed")
 
     try:
@@ -2049,9 +1559,9 @@ async def main():
         mux = TCA9548A(base_i2c, addr=TCA_ADDR)
         api.register_handle("base_i2c", base_i2c)
         api.register_handle("mux", mux)
-        info("BOOT: TCA9548A initialized")
+        info("BOOT mux ok")
         diag(
-            "TCA BUS sda={} scl={} addr={}".format(
+            "TCA {} {} {}".format(
                 TCA_SDA_GPIO, TCA_SCL_GPIO, hex(TCA_ADDR)
             )
         )
@@ -2084,13 +1594,13 @@ async def main():
             mux_channel=MPU_CHANNEL,
         )
         api.register_handle("imu", imu)
-        info("BOOT: MPU-6050 initialized")
+        info("BOOT mpu ok")
         diag("MPU CH={} ADDR={}".format(MPU_CHANNEL, hex(MPU_ADDR)))
         state("BOOT", "mpu_ok")
     except Exception as e:
         error("MPU_INIT", e)
         imu = None
-        warn("BOOT: MPU unavailable")
+        warn("BOOT no mpu")
 
     try:
         from robot.oled_status import OledStatus
@@ -2108,11 +1618,11 @@ async def main():
         if oled and oled.available:
             api.register_handle("oled", oled)
             _boot_oled(api, "ZebraBot", "Booting...", "OLED online")
-            info("BOOT: OLED initialized")
+            info("BOOT oled ok")
             diag("OLED CH={} ADDR={}".format(OLED_CHANNEL, hex(OLED_ADDR)))
             state("BOOT", "oled_ok")
         else:
-            info("BOOT: OLED unavailable")
+            info("BOOT no oled")
             state("BOOT", "oled_unavailable")
     except Exception as e:
         error("OLED_INIT", e)
@@ -2134,18 +1644,18 @@ async def main():
             PREACTIVE_BLE = None
             _attach_ble_teleop(api, teleop, imu=imu, start_imu=False)
 
-            info("BOOT: BLE teleop initialized")
+            info("BOOT ble ok")
             state("BOOT", "ble_ok")
         except Exception as e:
             teleop = None
             error("BLE_INIT", e)
             _boot_oled(api, "ZebraBot", "BLE init fail", str(type(e).__name__))
-            warn("BOOT: BLE init deferred")
+            warn("BOOT ble defer")
             state("BOOT", "ble_deferred")
     else:
         teleop = None
         PREACTIVE_BLE = None
-        warn("BOOT: BLE disabled by config")
+        warn("BOOT ble off")
         state("BOOT", "ble_disabled")
 
     _boot_oled(api, "ZebraBot", "Sensors init", "")
@@ -2165,7 +1675,7 @@ async def main():
             port_channels=SENSOR_PORT_CHANNELS,
         )
         api.register_handle("sensor_hub", sensor_hub)
-        info("BOOT: SensorHub initialized")
+        info("BOOT sensors ok")
         state("BOOT", "sensorhub_ok")
         _boot_oled(api, "ZebraBot", "Sensors ok", "")
     except Exception as e:
@@ -2202,7 +1712,7 @@ async def main():
                 teleop.motor_ports = ACTIVE_MOTOR_PORTS
                 teleop.motor_port_map = motor_port_map
 
-            info("BOOT: motor feedback/scanner initialized")
+            info("BOOT motor fb ok")
             state("BOOT", "motor_scan_ok")
 
         except Exception as e:
@@ -2212,7 +1722,7 @@ async def main():
     else:
         motor_feedback = None
         motor_scanner = None
-        info("BOOT: motor feedback/scanner disabled")
+        info("BOOT motor fb off")
         state("BOOT", "motor_scan_disabled")
         _boot_oled(api, "ZebraBot", "Motors skipped", "")
 
@@ -2222,12 +1732,12 @@ async def main():
                 "ble_deferred",
                 _create_guarded_task(api, "ble_deferred", _deferred_ble_start_task(api, runtime_drive, steer, imu, oled)),
             )
-            info("BOOT: deferred BLE task scheduled")
+            info("BOOT ble task")
             state("TASK", "ble_deferred_started")
         except Exception as e:
             error("BLE_DEFERRED_TASK", e)
 
-    info("BOOT: robot boot complete")
+    info("BOOT done")
     state("BOOT", "complete")
     api.status["boot"]["state"] = "complete"
     api.set_ready(True)
@@ -2239,10 +1749,10 @@ async def main():
     elif imu is not None and teleop is not None:
         _attach_ble_teleop(api, teleop, imu=imu)
     elif imu is not None:
-        info("BOOT: IMU task waiting for BLE")
+        info("BOOT imu wait")
         state("TASK", "imu_waiting_ble")
     else:
-        info("BOOT: IMU task skipped (no IMU)")
+        info("BOOT imu skip")
         state("TASK", "imu_skipped")
     ENABLE_ACTIVE_MOTOR_SCAN = False
 
@@ -2250,12 +1760,12 @@ async def main():
         if ENABLE_ACTIVE_MOTOR_SCAN:
             try:
                 api.register_task("motor_scan", _create_guarded_task(api, "motor_scan", motor_scanner.task()))
-                info("BOOT: MotorScanner task started")
+                info("BOOT scan task")
                 state("TASK", "motor_scan_started")
             except Exception as e:
                 error("MOTOR_SCAN_TASK", e)
         else:
-            warn("BOOT: active motor scan disabled during user runtime")
+            warn("BOOT scan off")
 
         try:
             api.register_task(
@@ -2266,17 +1776,17 @@ async def main():
                     motor_scanner.feedback_task(period_ms=MOTOR_FEEDBACK_PERIOD_MS),
                 ),
             )
-            info("BOOT: Motor feedback task started")
+            info("BOOT fb task")
             state("TASK", "motor_feedback_started")
         except Exception as e:
             error("MOTOR_FB_TASK", e)
     else:
-        warn("BOOT: motor scan tasks skipped")
+        warn("BOOT scan skip")
 
     if button_manager is not None:
         try:
             api.register_task("buttons", _create_guarded_task(api, "buttons", button_manager.task()))
-            info("BOOT: Button task started")
+            info("BOOT btn task")
             state("TASK", "buttons_started")
         except Exception as e:
             error("BUTTON_TASK", e)
@@ -2289,12 +1799,12 @@ async def main():
     if OLED_STATUS_ENABLED:
         try:
             api.register_task("oled_status", _create_guarded_task(api, "oled_status", _oled_status_task(api)))
-            info("BOOT: OLED status task started")
+            info("BOOT oled task")
             state("TASK", "oled_status_started")
         except Exception as e:
             error("OLED_STATUS_START", e)
     else:
-        info("BOOT: OLED status task disabled")
+        info("BOOT oled task off")
         state("TASK", "oled_status_disabled")
 
     try:
@@ -2305,7 +1815,7 @@ async def main():
     if sensor_hub is not None:
         try:
             api.register_task("sensor_hub", _create_guarded_task(api, "sensor_hub", sensor_hub.task()))
-            info("BOOT: SensorHub task started")
+            info("BOOT sensor task")
             state("TASK", "sensorhub_started")
         except Exception as e:
             error("SENSOR_HUB_TASK", e)
@@ -2321,28 +1831,28 @@ def _safe_mode_requested():
         pin = Pin(SAFE_MODE_PIN, Pin.IN, Pin.PULL_UP)
         return pin.value() == 0
     except Exception as e:
-        warn("SAFE_MODE_PIN unavailable: {}".format(e))
+        warn("SAFE_PIN {}".format(e))
         return False
 
 
 def boot():
     global PREACTIVE_BLE
 
-    info("BOOT: main.py entry")
+    info("BOOT main")
 
     if _safe_mode_requested():
-        warn("BOOT: safe mode requested on GPIO{}; staying in REPL".format(SAFE_MODE_PIN))
-        print("SAFE MODE: GPIO{} held low, normal boot skipped.".format(SAFE_MODE_PIN))
-        print("SAFE MODE: release the pin and soft reset to boot normally.")
+        warn("SAFE GPIO{}".format(SAFE_MODE_PIN))
+        print("SAFE GPIO{}".format(SAFE_MODE_PIN))
+        print("Release pin; reset.")
         state("BOOT", "safe_mode")
         if API is not None:
             API.status["boot"]["safe_mode"] = True
         return
 
-    print("BOOT: starting in {} second(s); press Ctrl-C for REPL.".format(BOOT_GRACE_SECONDS))
+    print("BOOT {}s Ctrl-C.".format(BOOT_GRACE_SECONDS))
     for remaining in range(BOOT_GRACE_SECONDS, 0, -1):
         state("BOOT", "grace_{}".format(remaining))
-        print("BOOT: launch in {}...".format(remaining))
+        print("BOOT {}...".format(remaining))
         time.sleep(1)
 
     asyncio.run(main())
