@@ -23,6 +23,50 @@ Field meanings:
   degrees per second.
 - `temp_c`: IMU chip temperature, in degrees Celsius.
 
+## Distance traveled estimate
+
+Use `zbot.reset_imu_distance()` before a short run, then read
+`zbot.imu_distance()` to get an approximate distance traveled:
+
+```python
+async def main(zbot):
+    import uasyncio as asyncio
+
+    zbot.reset_imu_distance()
+    zbot.forward(35)
+
+    try:
+        while True:
+            dist = zbot.imu_distance()
+            zbot.say(
+                "Distance",
+                "{:.2f} m".format(dist.get("distance_m", 0.0)),
+                "{:.2f} m/s".format(dist.get("speed_mps", 0.0)),
+            )
+            await asyncio.sleep_ms(100)
+    finally:
+        zbot.stop()
+```
+
+The estimate comes from IMU acceleration magnitude, so it is best for short
+movements and quick feedback. It will drift over time because the MPU-6050 does
+not know wheel rotation or true floor speed. For accurate distance, use motor
+encoders or a measured distance sensor when available.
+
+`zbot.imu_distance()` returns a dictionary like:
+
+```python
+{
+    "status": "ok",
+    "distance_m": 0.42,
+    "speed_mps": 0.18,
+    "accel_mps2": 0.31,
+    "accel_mag_g": 1.032,
+    "gyro_mag_dps": 0.9,
+    "source": "accel_magnitude",
+}
+```
+
 `zbot.imu()` wraps this payload in a snapshot dictionary:
 
 ```python
@@ -95,12 +139,14 @@ order:
 
 ```text
 IMU ax_g ay_g az_g gx_dps gy_dps gz_dps temp_c
+IMU_DIST distance_m speed_mps accel_mps2 status
 ```
 
 For example:
 
 ```text
 IMU -0.291 0.082 0.983 -0.809 2.702 -0.099 43.92
+IMU_DIST 0.420 0.180 0.310 ok
 ```
 
 ## Live turn radius

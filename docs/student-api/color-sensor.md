@@ -76,6 +76,66 @@ async def main(zbot):
 Raw RGB readings are useful for calibration, debugging, or checking how lighting
 affects the sensor.
 
+## Contrast And Edges
+
+Use `contrast()` or `find_contrast()` when you want a single brightness-style
+number for the surface under the color sensor. It uses the sensor's clear/RGB
+reading, so dark tape over a light floor should produce a noticeably different
+number.
+
+```python
+async def main(zbot):
+    import uasyncio as asyncio
+
+    port = 2
+    floor = zbot.sensor(port)
+
+    baseline = None
+
+    while baseline is None:
+        baseline = floor.find_contrast()
+        await asyncio.sleep_ms(100)
+
+    while True:
+        change = floor.find_contrast(baseline)
+
+        if change is not None and change > 200:
+            zbot.notify("high contrast")
+
+        await asyncio.sleep_ms(50)
+```
+
+Use `find_edge()` to detect a sudden contrast change between checks. The first
+call stores the starting level and returns `False`; later calls return `True`
+when the change is at least the threshold.
+
+```python
+async def main(zbot):
+    import uasyncio as asyncio
+
+    port = 2
+    zbot.reset_edge(port)
+
+    while True:
+        if zbot.find_edge(port, threshold=150):
+            zbot.stop()
+            zbot.notify("edge")
+            break
+
+        zbot.forward(20)
+        await asyncio.sleep_ms(50)
+```
+
+The direct wrapper has the same helpers:
+
+```python
+floor = zbot.sensor(2)
+
+contrast = floor.contrast()
+if floor.find_edge(150):
+    zbot.notify("edge")
+```
+
 ## Color Match Details
 
 Use `color_match()` when you want the matched color plus debugging details.

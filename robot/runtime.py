@@ -1,4 +1,5 @@
 import os
+import math
 import time
 import uasyncio as asyncio
 from machine import I2C, Pin
@@ -71,6 +72,14 @@ TCA_ADDR = _cfg("TCA_ADDR", 0x70)
 MPU_ADDR = _cfg("MPU_ADDR", 0x68)
 MPU_CHANNEL = _cfg("MPU_CHANNEL", 7)
 MPU_PERIOD_MS = _cfg("MPU_PERIOD_MS", 10)
+IMU_DISTANCE_ACCEL_DEADBAND_MPS2 = _cfg("IMU_DISTANCE_ACCEL_DEADBAND_MPS2", 0.18)
+IMU_DISTANCE_STILL_ACCEL_MPS2 = _cfg("IMU_DISTANCE_STILL_ACCEL_MPS2", 0.35)
+IMU_DISTANCE_STILL_GYRO_DPS = _cfg("IMU_DISTANCE_STILL_GYRO_DPS", 3.0)
+IMU_DISTANCE_STILL_MS = _cfg("IMU_DISTANCE_STILL_MS", 500)
+IMU_DISTANCE_MAX_DT_MS = _cfg("IMU_DISTANCE_MAX_DT_MS", 250)
+IMU_DISTANCE_DAMPING = _cfg("IMU_DISTANCE_DAMPING", 0.98)
+IMU_DISTANCE_MIN_SPEED_MPS = _cfg("IMU_DISTANCE_MIN_SPEED_MPS", 0.015)
+GRAVITY_MPS2 = 9.80665
 TURN_RADIUS_DEFAULT_SPEED_MPS = _cfg("TURN_RADIUS_DEFAULT_SPEED_MPS", 0.4)
 TURN_RADIUS_DEFAULT_DRIVE_POWER = _cfg("TURN_RADIUS_DEFAULT_DRIVE_POWER", 40)
 TURN_RADIUS_DEFAULT_TURN = _cfg("TURN_RADIUS_DEFAULT_TURN", 35)
@@ -253,6 +262,12 @@ class RobotAPI:
             "servos": {},
             "steering": {},
             "imu": {},
+            "imu_distance": {
+                "active": True,
+                "status": "waiting",
+                "distance_m": 0.0,
+                "speed_mps": 0.0,
+            },
             "turn_radius": {
                 "active": False,
                 "status": "idle",
@@ -738,6 +753,135 @@ class RobotAPI:
             self.refresh_imu_snapshot()
         return self.status.get("imu", {})
 
+    def _imu_distance_state(self):
+        state = self.status.get("imu_distance")
+        if not isinstance(state, dict):
+            state = {
+                "active": True,
+                "status": "waiting",
+                "distance_m": 0.0,
+                "speed_mps": 0.0,
+            }
+            self.status["imu_distance"] = state
+        return state
+
+    def reset_imu_distance(self):
+        state = self._imu_distance_state()
+        ts_ms = time.ticks_ms()
+        state.update({
+            "active": True,
+            "status": "reset",
+            "distance_m": 0.0,
+            "speed_mps": 0.0,
+            "accel_mps2": 0.0,
+            "still_ms": 0,
+            "last_ms": ts_ms,
+            "ts_ms": ts_ms,
+            "source": "accel_magnitude",
+        })
+        return state
+
+    def get_imu_distance(self, reset=False):
+        if reset:
+            return self.reset_imu_distance()
+        if self.handles.get("imu") is not None:
+            self.refresh_imu_snapshot()
+        return self._imu_distance_state()
+
+    def _reading_value(self, reading, keys):
+        if not isinstance(reading, dict):
+            return None
+        for key in keys:
+            value = reading.get(key)
+            if isinstance(value, (int, float)):
+                return float(value)
+        return None
+
+    def _update_imu_distance(self, reading, ts_ms=None):
+        state = self._imu_distance_state()
+        if not state.get("active", True):
+            return state
+
+        if ts_ms is None:
+            ts_ms = time.ticks_ms()
+
+        ax = self._reading_value(reading, ("ax_g", "accel_x_g", "ax", "accel_x"))
+        ay = self._reading_value(reading, ("ay_g", "accel_y_g", "ay", "accel_y"))
+        az = self._reading_value(reading, ("az_g", "accel_z_g", "az", "accel_z"))
+        gx = self._reading_value(reading, ("gx_dps", "gyro_x_dps", "gx", "gyro_x")) or 0.0
+        gy = self._reading_value(reading, ("gy_dps", "gyro_y_dps", "gy", "gyro_y")) or 0.0
+        gz = self._reading_value(reading, ("gz_dps", "gyro_z_dps", "gz", "gyro_z")) or 0.0
+
+        if ax is None or ay is None or az is None:
+            state.update({
+                "status": "missing_accel",
+                "accel_mps2": None,
+                "ts_ms": ts_ms,
+            })
+            return state
+
+        last_ms = state.get("last_ms")
+        state["last_ms"] = ts_ms
+        if last_ms is None:
+            state.update({
+                "status": "waiting",
+                "accel_mps2": 0.0,
+                "ts_ms": ts_ms,
+                "source": "accel_magnitude",
+            })
+            return state
+
+        dt_ms = time.ticks_diff(ts_ms, last_ms)
+        if dt_ms <= 0:
+            return state
+        if dt_ms > int(IMU_DISTANCE_MAX_DT_MS):
+            state.update({
+                "status": "waiting",
+                "speed_mps": 0.0,
+                "still_ms": 0,
+                "ts_ms": ts_ms,
+            })
+            return state
+
+        accel_mag_g = math.sqrt((ax * ax) + (ay * ay) + (az * az))
+        accel_mps2 = abs(accel_mag_g - 1.0) * GRAVITY_MPS2
+        if accel_mps2 < float(IMU_DISTANCE_ACCEL_DEADBAND_MPS2):
+            accel_mps2 = 0.0
+
+        gyro_mag_dps = max(abs(gx), abs(gy), abs(gz))
+        still_ms = int(state.get("still_ms", 0))
+        dt_s = dt_ms / 1000.0
+        speed = float(state.get("speed_mps", 0.0))
+
+        if (
+            accel_mps2 < float(IMU_DISTANCE_STILL_ACCEL_MPS2)
+            and gyro_mag_dps < float(IMU_DISTANCE_STILL_GYRO_DPS)
+        ):
+            still_ms += dt_ms
+            speed *= float(IMU_DISTANCE_DAMPING)
+            if still_ms >= int(IMU_DISTANCE_STILL_MS):
+                speed = 0.0
+        else:
+            still_ms = 0
+            speed = (speed + (accel_mps2 * dt_s)) * float(IMU_DISTANCE_DAMPING)
+
+        if accel_mps2 == 0.0 and speed < float(IMU_DISTANCE_MIN_SPEED_MPS):
+            speed = 0.0
+
+        distance = float(state.get("distance_m", 0.0)) + (speed * dt_s)
+        state.update({
+            "status": "ok",
+            "distance_m": distance,
+            "speed_mps": speed,
+            "accel_mps2": accel_mps2,
+            "accel_mag_g": accel_mag_g,
+            "gyro_mag_dps": gyro_mag_dps,
+            "still_ms": still_ms,
+            "ts_ms": ts_ms,
+            "source": "accel_magnitude",
+        })
+        return state
+
     def _turn_radius_state(self):
         state = self.status.get("turn_radius")
         if not isinstance(state, dict):
@@ -867,15 +1011,22 @@ class RobotAPI:
                 raise AttributeError("imu object has no read_scaled/read")
 
             ts_ms = time.ticks_ms()
+            distance = self._update_imu_distance(reading, ts_ms)
             turn_radius = self._update_turn_radius(reading, ts_ms)
             self.status["imu"] = {
                 "value": reading,
                 "ts_ms": ts_ms,
+                "distance": distance,
                 "turn_radius": turn_radius,
             }
             return self.status["imu"]
         except Exception as e:
             state = self._turn_radius_state()
+            distance = self._imu_distance_state()
+            distance.update({
+                "status": "missing_imu",
+                "ts_ms": time.ticks_ms(),
+            })
             if state.get("active"):
                 state.update({
                     "status": "missing_imu",
@@ -887,6 +1038,7 @@ class RobotAPI:
             self.status["imu"] = {
                 "error": repr(e),
                 "ts_ms": time.ticks_ms(),
+                "distance": distance,
                 "turn_radius": state,
             }
             return None
@@ -1338,6 +1490,10 @@ async def _boot_complete_message(api):
 
 def _attach_ble_teleop(api, teleop, imu=None, start_imu=True):
     api.register_handle("teleop", teleop)
+    try:
+        teleop.api = api
+    except Exception:
+        pass
     set_ble_sink(teleop)
 
     motor_feedback = api.get_handle("motor_feedback")

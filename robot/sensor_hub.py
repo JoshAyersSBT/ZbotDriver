@@ -54,6 +54,12 @@ BLACK_TOTAL_MAX = 100
 BLACK_CLEAR_MAX = 120
 
 
+def color_contrast_level(r, g, b, clear=None):
+    total = int(r) + int(g) + int(b)
+    clear_value = int(clear) if clear is not None else 0
+    return max(total, clear_value)
+
+
 def _color_range(center, tolerance):
     return {
         "center": center,
@@ -272,6 +278,7 @@ class SensorHub:
                             "clear": int(clear),
                             "color": match["name"],
                             "confidence": match["confidence"],
+                            "contrast": color_contrast_level(r, g, b, clear),
                             "normalized": match["normalized"],
                         },
                         "meta": {
@@ -342,6 +349,26 @@ class SensorHub:
             self._notify("SNS_DBG {} tcs_probe {}".format(port, e))
             return False
 
+    def _read_vl53l0x_model_id(self, port):
+        self._select(port)
+        return int(self.i2c.readfrom_mem(0x29, 0xC0, 1)[0])
+
+    def _read_vl53l1x_model_id(self, port):
+        self._select(port)
+        self.i2c.writeto(0x29, bytes([0x01, 0x0F]), False)
+        data = self.i2c.readfrom(0x29, 2)
+        return int((data[0] << 8) | data[1])
+
+    def _looks_like_vl53l0x(self, model_id):
+        return int(model_id) == 0xEE
+
+    def _looks_like_vl53l1x(self, model_id):
+        model_id = int(model_id)
+        return model_id == 0xEACC or ((model_id >> 8) & 0xFF) == 0xEA
+
+    def _valid_tof_distance(self, dist):
+        return 20 <= int(dist) <= 4000 and int(dist) not in (65535, 8190, 8191)
+
     def _read_tof_distance(self, sensor):
         if hasattr(sensor, "read"):
             return int(sensor.read())
@@ -385,7 +412,8 @@ class SensorHub:
             )
 
             self._tof[port] = ("VL53L1X", sensor)
-            self._last_value[("VL53L1X", port)] = sample["cand_96"]
+            if self._valid_tof_distance(sample["cand_96"]):
+                self._last_value[("VL53L1X", port)] = sample["cand_96"]
             self._mark_snapshot_dirty()
             return True
 
@@ -425,13 +453,10 @@ class SensorHub:
 
             if dist is None:
                 self._notify("SNS_DBG {} vl53l0x_invalid {}".format(port, last_error))
-                try:
-                    dist = int(sensor.read_reg16(sensor.RESULT_RANGE_STATUS + 10))
-                except Exception:
-                    dist = 8191
 
             self._tof[port] = ("VL53L0X", sensor)
-            self._last_value[("VL53L0X", port)] = dist
+            if dist is not None:
+                self._last_value[("VL53L0X", port)] = dist
             self._mark_snapshot_dirty()
             self._notify("SNS_DBG {} vl53l0x {}".format(port, dist))
             return True
@@ -451,6 +476,34 @@ class SensorHub:
 
         if self._try_tcs3472(port):
             return "TCS3472"
+
+        l0x_model = None
+        l1x_model = None
+        try:
+            l0x_model = self._read_vl53l0x_model_id(port)
+        except Exception:
+            pass
+        try:
+            l1x_model = self._read_vl53l1x_model_id(port)
+        except Exception:
+            pass
+
+        self._notify("SNS_DBG {} vl53_id l0x={} l1x={}".format(
+            port,
+            "?" if l0x_model is None else hex(l0x_model),
+            "?" if l1x_model is None else hex(l1x_model),
+        ))
+
+        if l1x_model is not None and self._looks_like_vl53l1x(l1x_model):
+            if self._try_vl53l1x(port):
+                return "VL53L1X"
+
+        if l0x_model is not None and self._looks_like_vl53l0x(l0x_model):
+            if self._try_vl53l0x(port):
+                return "VL53L0X"
+
+        if self._try_vl53l1x(port):
+            return "VL53L1X"
 
         if self._try_vl53l0x(port):
             return "VL53L0X"
@@ -491,8 +544,9 @@ class SensorHub:
                 sample = sensor.read_debug()
                 dist = int(sample.get("distance", 8191))
 
-                if dist <= 0 or dist >= 4000 or dist in (65535, 8190, 8191):
+                if not self._valid_tof_distance(dist):
                     self._notify("SNS_ERR {} {} invalid {}".format(port, kind, dist))
+                    return
 
             elif kind == "VL53L1X" and hasattr(sensor, "read_debug"):
                 sample = sensor.read_debug()
@@ -510,7 +564,7 @@ class SensorHub:
 
                 dist = sample["cand_96"]
 
-                if dist <= 0 or dist >= 4000 or dist == 65535:
+                if not self._valid_tof_distance(dist):
                     self._notify("SNS_ERR {} {} invalid {}".format(port, kind, dist))
                     return
             else:

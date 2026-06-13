@@ -36,6 +36,7 @@ metadata:
         "clear": 310,
         "color": "red",
         "confidence": 92,
+        "contrast": 310,
         "normalized": {"r": 196, "g": 32, "b": 26},
     },
     "meta": {

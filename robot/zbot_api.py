@@ -3,6 +3,7 @@ import time
 COLOR_CALIBRATION_DEFAULT_SAMPLES = 8
 COLOR_CALIBRATION_DEFAULT_DELAY_MS = 40
 COLOR_CALIBRATION_MAX_SAMPLES = 30
+COLOR_EDGE_DEFAULT_THRESHOLD = 120
 TURN_RADIUS_DEFAULT_SPEED_MPS = 0.4
 TURN_RADIUS_DEFAULT_DRIVE_POWER = 40
 TURN_RADIUS_DEFAULT_TURN = 35
@@ -69,6 +70,7 @@ class _ZBotSensor:
     def __init__(self, api, port):
         self.api = api
         self.port = int(port)
+        self._last_edge_level = None
 
     def _find_snapshot_value(self):
         if self.api is None:
@@ -151,6 +153,48 @@ class _ZBotSensor:
             "b": int(value.get("b", 0)),
             "clear": int(value.get("clear", 0)),
         }
+
+    def _contrast_level(self, rgb):
+        if rgb is None:
+            return None
+        total = int(rgb.get("r", 0)) + int(rgb.get("g", 0)) + int(rgb.get("b", 0))
+        clear = int(rgb.get("clear", 0))
+        return max(total, clear)
+
+    def contrast(self, baseline=None):
+        rgb = self.rgb()
+        level = self._contrast_level(rgb)
+        if level is None:
+            return None
+
+        if baseline is None:
+            return level
+
+        if isinstance(baseline, dict):
+            baseline_level = self._contrast_level(baseline)
+        else:
+            baseline_level = int(baseline)
+
+        return abs(level - int(baseline_level))
+
+    def find_contrast(self, baseline=None):
+        return self.contrast(baseline)
+
+    def find_edge(self, threshold=COLOR_EDGE_DEFAULT_THRESHOLD):
+        level = self.contrast()
+        if level is None:
+            return False
+
+        last = self._last_edge_level
+        self._last_edge_level = level
+        if last is None:
+            return False
+
+        return abs(level - last) >= int(threshold)
+
+    def reset_edge(self):
+        self._last_edge_level = self.contrast()
+        return self._last_edge_level
 
     def color(self):
         match = self.color_match()
@@ -324,9 +368,11 @@ class ZBot:
         self._motor_wrappers = {}
         self._servo_wrappers = {}
         self._button_wrappers = {}
+        self._sensor_wrappers = {}
 
     def bind(self, api):
         self.api = api
+        self._sensor_wrappers = {}
         return self
 
     def ready(self):
@@ -394,9 +440,14 @@ class ZBot:
         return self.motor(port, motor_type)
 
     def sensor(self, port):
+        key = int(port)
         if self.api is None:
             return _ZBotSensor(None, port)
-        return _ZBotSensor(self.api, port)
+
+        if key not in self._sensor_wrappers:
+            self._sensor_wrappers[key] = _ZBotSensor(self.api, port)
+
+        return self._sensor_wrappers[key]
 
     def tof(self, port):
         s = self.sensor(port)
@@ -413,6 +464,22 @@ class ZBot:
     def color_match(self, port):
         s = self.sensor(port)
         return s.color_match()
+
+    def contrast(self, port, baseline=None):
+        s = self.sensor(port)
+        return s.contrast(baseline)
+
+    def find_contrast(self, port, baseline=None):
+        s = self.sensor(port)
+        return s.find_contrast(baseline)
+
+    def find_edge(self, port, threshold=COLOR_EDGE_DEFAULT_THRESHOLD):
+        s = self.sensor(port)
+        return s.find_edge(threshold)
+
+    def reset_edge(self, port):
+        s = self.sensor(port)
+        return s.reset_edge()
 
     def calibrate_color(self, port, name, samples=COLOR_CALIBRATION_DEFAULT_SAMPLES, delay_ms=COLOR_CALIBRATION_DEFAULT_DELAY_MS):
         s = self.sensor(port)
@@ -447,6 +514,16 @@ class ZBot:
         if self.api is None:
             return {}
         return self.api.get_imu()
+
+    def imu_distance(self, reset=False):
+        if self.api is None:
+            return {}
+        return self.api.get_imu_distance(reset=reset)
+
+    def reset_imu_distance(self):
+        if self.api is None:
+            return {}
+        return self.api.reset_imu_distance()
 
     def start_turn(self, speed_mps=TURN_RADIUS_DEFAULT_SPEED_MPS, drive_power=TURN_RADIUS_DEFAULT_DRIVE_POWER, turn=TURN_RADIUS_DEFAULT_TURN, min_yaw_dps=TURN_RADIUS_MIN_YAW_DPS):
         if self.api is None:

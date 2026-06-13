@@ -161,6 +161,16 @@ MPU_ADDR = 0x68
 MPU_CHANNEL = 7
 MPU_PERIOD_MS = 10
 
+# Distance estimator derived from IMU acceleration magnitude. This is useful
+# for short runs, but it will drift because the MPU-6050 has no wheel odometry.
+IMU_DISTANCE_ACCEL_DEADBAND_MPS2 = 0.18
+IMU_DISTANCE_STILL_ACCEL_MPS2 = 0.35
+IMU_DISTANCE_STILL_GYRO_DPS = 3.0
+IMU_DISTANCE_STILL_MS = 500
+IMU_DISTANCE_MAX_DT_MS = 250
+IMU_DISTANCE_DAMPING = 0.98
+IMU_DISTANCE_MIN_SPEED_MPS = 0.015
+
 # Live turn-radius helper defaults. Measure SPEED_MPS for your robot by driving
 # a known distance at the default power and dividing distance by elapsed time.
 TURN_RADIUS_DEFAULT_SPEED_MPS = 0.4

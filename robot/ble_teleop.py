@@ -105,6 +105,7 @@ class BleTeleop:
         self.drive = drive
         self.steering = steering
         self.imu = imu
+        self.api = None
         self.imu_period_ms = int(imu_period_ms)
         self._imu_enabled = True
         self.oled = oled
@@ -238,6 +239,10 @@ class BleTeleop:
 
         Packet format matches what the desktop teleop parser expects:
             IMU ax ay az gx gy gz temp
+
+        Distance telemetry is emitted separately so the IMU packet stays
+        backward-compatible:
+            IMU_DIST distance_m speed_mps accel_mps2 status
         """
         if self.imu is None:
             self.notify_info("IMU task disabled: no IMU configured")
@@ -248,7 +253,16 @@ class BleTeleop:
         while True:
             try:
                 if self._imu_enabled:
-                    d = self.imu.read_scaled()
+                    snap = None
+                    if self.api is not None and hasattr(self.api, "refresh_imu_snapshot"):
+                        snap = self.api.refresh_imu_snapshot()
+
+                    if isinstance(snap, dict) and isinstance(snap.get("value"), dict):
+                        d = snap["value"]
+                    else:
+                        d = self.imu.read_scaled()
+                        snap = None
+
                     self.notify_line(
                         "IMU {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.2f}".format(
                             d["ax_g"],
@@ -260,6 +274,17 @@ class BleTeleop:
                             d["temp_c"],
                         )
                     )
+
+                    distance = snap.get("distance") if isinstance(snap, dict) else None
+                    if isinstance(distance, dict):
+                        self.notify_line(
+                            "IMU_DIST {:.3f} {:.3f} {:.3f} {}".format(
+                                float(distance.get("distance_m", 0.0)),
+                                float(distance.get("speed_mps", 0.0)),
+                                float(distance.get("accel_mps2", 0.0) or 0.0),
+                                distance.get("status", "unknown"),
+                            )
+                        )
             except Exception as e:
                 self.notify_error("IMU_TASK", e)
 
