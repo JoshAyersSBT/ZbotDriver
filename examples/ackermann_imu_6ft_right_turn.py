@@ -18,6 +18,8 @@ async def main(zbot):
     LOOP_MS = 20
     GYRO_DEADBAND_DPS = 1.0
     MAX_FORWARD_MS = 12000
+    IMU_PROGRESS_TIMEOUT_MS = 1500
+    IMU_PROGRESS_EPSILON_M = 0.01
     MAX_TURN_MS = 6000
 
     car = AckermannDrive(
@@ -47,6 +49,8 @@ async def main(zbot):
         car.drive(DRIVE_POWER, CENTER_ANGLE)
 
         start_ms = time.ticks_ms()
+        last_progress_ms = start_ms
+        last_traveled_m = 0.0
         while True:
             car.update()
             dist = zbot.imu_distance()
@@ -61,7 +65,16 @@ async def main(zbot):
             if traveled_m >= distance_m:
                 break
 
-            elapsed_ms = time.ticks_diff(time.ticks_ms(), start_ms)
+            now_ms = time.ticks_ms()
+            if traveled_m > last_traveled_m + IMU_PROGRESS_EPSILON_M:
+                last_traveled_m = traveled_m
+                last_progress_ms = now_ms
+
+            if time.ticks_diff(now_ms, last_progress_ms) >= IMU_PROGRESS_TIMEOUT_MS:
+                zbot.display("Forward", "IMU timeout", "{:.2f} m".format(traveled_m))
+                break
+
+            elapsed_ms = time.ticks_diff(now_ms, start_ms)
             if elapsed_ms >= MAX_FORWARD_MS:
                 zbot.display("Forward", "timeout", "{:.2f} m".format(traveled_m))
                 break
