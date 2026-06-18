@@ -16,42 +16,46 @@ except ImportError:
 
 
 COLOR_PALETTE_32 = (
-    ("black", (0, 0, 0), 70),
-    ("white", (255, 255, 255), 70),
-    ("silver", (192, 192, 192), 70),
-    ("gray", (128, 128, 128), 70),
-    ("red", (255, 0, 0), 90),
-    ("maroon", (128, 0, 0), 90),
-    ("orange", (255, 128, 0), 80),
-    ("coral", (255, 127, 80), 80),
-    ("salmon", (250, 128, 114), 80),
-    ("brown", (150, 75, 0), 85),
-    ("tan", (210, 180, 140), 75),
-    ("yellow", (255, 255, 0), 80),
-    ("gold", (255, 215, 0), 75),
-    ("olive", (128, 128, 0), 85),
-    ("lime", (191, 255, 0), 80),
-    ("chartreuse", (128, 255, 0), 80),
-    ("green", (0, 170, 0), 90),
-    ("spring_green", (0, 255, 128), 80),
-    ("cyan", (0, 255, 255), 80),
-    ("turquoise", (64, 224, 208), 75),
-    ("teal", (0, 128, 128), 85),
-    ("azure", (0, 128, 255), 80),
-    ("sky_blue", (135, 206, 235), 75),
-    ("blue", (0, 0, 255), 90),
-    ("navy", (0, 0, 128), 90),
-    ("indigo", (75, 0, 130), 85),
-    ("purple", (128, 0, 128), 85),
-    ("violet", (148, 0, 211), 85),
-    ("lavender", (180, 160, 255), 75),
-    ("magenta", (255, 0, 255), 85),
-    ("pink", (255, 128, 192), 80),
-    ("rose", (255, 0, 128), 85),
+    ("none", (0, 0, 0), 120),
+    ("black", (0, 0, 0), 100),
+    ("white", (255, 255, 255), 100),
+    ("silver", (192, 192, 192), 100),
+    ("gray", (128, 128, 128), 100),
+    ("red", (255, 0, 0), 125),
+    ("maroon", (128, 0, 0), 125),
+    ("orange", (255, 128, 0), 110),
+    ("coral", (255, 127, 80), 110),
+    ("salmon", (250, 128, 114), 110),
+    ("brown", (150, 75, 0), 115),
+    ("tan", (210, 180, 140), 105),
+    ("yellow", (255, 255, 0), 110),
+    ("gold", (255, 215, 0), 105),
+    ("olive", (128, 128, 0), 115),
+    ("lime", (191, 255, 0), 110),
+    ("chartreuse", (128, 255, 0), 110),
+    ("green", (0, 170, 0), 125),
+    ("spring_green", (0, 255, 128), 110),
+    ("cyan", (0, 255, 255), 110),
+    ("turquoise", (64, 224, 208), 105),
+    ("teal", (0, 128, 128), 115),
+    ("azure", (0, 128, 255), 110),
+    ("sky_blue", (135, 206, 235), 105),
+    ("blue", (0, 0, 255), 125),
+    ("navy", (0, 0, 128), 125),
+    ("indigo", (75, 0, 130), 115),
+    ("purple", (128, 0, 128), 115),
+    ("violet", (148, 0, 211), 115),
+    ("lavender", (180, 160, 255), 105),
+    ("magenta", (255, 0, 255), 115),
+    ("pink", (255, 128, 192), 110),
+    ("rose", (255, 0, 128), 115),
 )
 
+NONE_COLOR_NAME = "none"
 BLACK_TOTAL_MAX = 100
 BLACK_CLEAR_MAX = 120
+NEUTRAL_DEADBAND = 35
+MIN_COLOR_CONFIDENCE = 35
 
 
 def color_contrast_level(r, g, b, clear=None):
@@ -79,11 +83,12 @@ def _palette_entry(name):
 def classify_rgb_color(r, g, b, clear=None):
     total = int(r) + int(g) + int(b)
     if total <= 0:
+        entry = _palette_entry(NONE_COLOR_NAME)
         return {
-            "name": "unknown",
+            "name": NONE_COLOR_NAME,
             "confidence": 0,
             "normalized": {"r": 0, "g": 0, "b": 0},
-            "range": None,
+            "range": _color_range(entry[1], entry[2]) if entry else None,
         }
 
     clear_value = int(clear) if clear is not None else total
@@ -101,7 +106,7 @@ def classify_rgb_color(r, g, b, clear=None):
     bn = int(int(b) * 255 / total)
     sample = (rn, gn, bn)
 
-    if max(sample) - min(sample) <= 20:
+    if max(sample) - min(sample) <= NEUTRAL_DEADBAND:
         if total < 100:
             neutral_name = "black"
         elif total < 500:
@@ -125,6 +130,9 @@ def classify_rgb_color(r, g, b, clear=None):
     best_tolerance = 1
 
     for name, center, tolerance in COLOR_PALETTE_32:
+        if name == NONE_COLOR_NAME:
+            continue
+
         center_total = center[0] + center[1] + center[2]
         if center_total <= 0:
             center_sample = (85, 85, 85)
@@ -147,7 +155,25 @@ def classify_rgb_color(r, g, b, clear=None):
             best_distance = distance
             best_tolerance = tolerance
 
+    if best_distance is None or best_distance > best_tolerance:
+        entry = _palette_entry(NONE_COLOR_NAME)
+        return {
+            "name": NONE_COLOR_NAME,
+            "confidence": 0,
+            "normalized": {"r": rn, "g": gn, "b": bn},
+            "range": _color_range(entry[1], entry[2]) if entry else None,
+        }
+
     confidence = max(0, 100 - int(best_distance * 100 / max(1, best_tolerance)))
+    if confidence < MIN_COLOR_CONFIDENCE:
+        entry = _palette_entry(NONE_COLOR_NAME)
+        return {
+            "name": NONE_COLOR_NAME,
+            "confidence": 0,
+            "normalized": {"r": rn, "g": gn, "b": bn},
+            "range": _color_range(entry[1], entry[2]) if entry else None,
+        }
+
     return {
         "name": best_name,
         "confidence": confidence,

@@ -1,7 +1,9 @@
 # Color Sensor
 
 Use `zbot.color(port)` to read the nearest color name from the 32-color range
-palette. This avoids needing to match an exact raw RGB value.
+palette. This avoids needing to match an exact raw RGB value. If the sensor is
+working but the reading does not fit the built-in palette well enough, the
+color is `"none"`.
 
 ```python
 async def main(zbot):
@@ -11,12 +13,16 @@ async def main(zbot):
 
     try:
         while True:
-            # color(port) returns the nearest color name, such as "red" or
-            # "blue". It returns None until the color sensor is detected.
+            # color(port) returns a color name, such as "red", "blue", or
+            # "none". It returns None until the color sensor is detected.
             color = zbot.color(floor_port)
 
             if color is None:
                 zbot.display("Color", "waiting")
+
+            elif color == "none":
+                zbot.display("Color", "no match")
+                zbot.forward(20)
 
             elif color == "red":
                 zbot.display("Stop line", "red")
@@ -172,7 +178,8 @@ async def main(zbot):
 }
 ```
 
-`confidence` is a rough score from `0` to `100`. It is meant for quick robot
+`confidence` is a rough score from `0` to `100`. A reading outside the palette
+deadband returns `"none"` with confidence `0`. It is meant for quick robot
 logic and debugging, not precise color science.
 
 ## 32-Color Palette
@@ -180,7 +187,7 @@ logic and debugging, not precise color science.
 The built-in palette currently includes:
 
 ```text
-black, white, silver, gray,
+none, black, white, silver, gray,
 red, maroon, orange, coral, salmon, brown, tan,
 yellow, gold, olive, lime, chartreuse, green, spring_green,
 cyan, turquoise, teal, azure, sky_blue, blue, navy,
