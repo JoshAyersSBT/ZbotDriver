@@ -43,6 +43,7 @@ class AckermannDrive:
 
         self._last_throttle = 0
         self._last_angle = self.center_angle
+        self._last_commanded_angle = self.center_angle
 
         # IMU / heading-hold settings
         self.imu_ref = bool(imu_ref)
@@ -234,14 +235,38 @@ class AckermannDrive:
         self._heading_prev_error = 0.0
         return 0
 
-    def steer(self, angle):
+    def _apply_steering(self, angle):
         angle = self._clamp_angle(angle)
         self._last_angle = angle
         self.zbot.api.set_servo(self.steering_port, angle)
         return angle
 
+    def steer(self, angle):
+        angle = self._clamp_angle(angle)
+        self._last_commanded_angle = angle
+        return self._apply_steering(angle)
+
     def steer_center(self):
         return self.steer(self.center_angle)
+
+    def drive_straight(self, throttle, reset_reference=False):
+        """
+        Drive with centered Ackermann steering and IMU heading hold.
+
+        This wraps the straight-line pattern used by challenge programs:
+        enable the IMU reference, command the center angle, and keep reapplying
+        that centered command from the driving loop.
+        """
+        if not self.imu_ref:
+            self.enable_imu_reference(True, reset_reference=reset_reference)
+        elif reset_reference or self._target_heading_deg is None:
+            self.reset_heading_reference()
+
+        return self.drive(throttle, self.center_angle)
+
+    def start_straight(self, throttle):
+        self.steer_center()
+        return self.drive_straight(throttle, reset_reference=True)
 
     def drive(self, throttle, steering_angle=None):
         throttle = self._clamp_power(throttle)
@@ -250,6 +275,7 @@ class AckermannDrive:
             steering_angle = self.center_angle
         else:
             steering_angle = int(steering_angle)
+        self._last_commanded_angle = self._clamp_angle(steering_angle)
 
         if throttle > 0:
             self.forward(throttle)
@@ -259,23 +285,24 @@ class AckermannDrive:
             self.stop()
 
         # Only apply heading hold when roughly driving straight.
-        final_angle = steering_angle
-        if self.imu_ref and abs(steering_angle - self.center_angle) <= 2 and throttle != 0:
+        final_angle = self._last_commanded_angle
+        if self.imu_ref and abs(self._last_commanded_angle - self.center_angle) <= 2 and throttle != 0:
             if self._target_heading_deg is None:
                 self.reset_heading_reference()
-            final_angle = steering_angle + self._pid_correction_deg()
+            final_angle = self._last_commanded_angle + self._pid_correction_deg()
         else:
             # When intentionally steering away from center, clear heading hold integral windup.
             self._heading_integral = 0.0
             self._heading_prev_error = 0.0
-            if abs(steering_angle - self.center_angle) > 2 and self.imu_ref:
+            if abs(self._last_commanded_angle - self.center_angle) > 2 and self.imu_ref:
                 self._target_heading_deg = None
 
-        final_angle = self.steer(final_angle)
+        final_angle = self._apply_steering(final_angle)
 
         return {
             "mode": "ackermann",
             "throttle": throttle,
+            "commanded_steering_angle": self._last_commanded_angle,
             "steering_angle": final_angle,
             "imu_ref": self.imu_ref,
             "heading_ref": self._target_heading_deg,
@@ -288,12 +315,13 @@ class AckermannDrive:
         It refreshes the heading estimate and reapplies straight-line correction.
         """
         self._update_heading_estimate()
-        if self.imu_ref and self._last_throttle != 0 and abs(self._last_angle - self.center_angle) <= 2:
-            corrected = self.center_angle + self._pid_correction_deg()
-            self.steer(corrected)
+        if self.imu_ref and self._last_throttle != 0 and abs(self._last_commanded_angle - self.center_angle) <= 2:
+            corrected = self._last_commanded_angle + self._pid_correction_deg()
+            self._apply_steering(corrected)
         return {
             "heading_ref": self._target_heading_deg,
             "heading_est": self._estimated_heading_deg,
             "last_throttle": self._last_throttle,
             "last_angle": self._last_angle,
+            "last_commanded_angle": self._last_commanded_angle,
         }

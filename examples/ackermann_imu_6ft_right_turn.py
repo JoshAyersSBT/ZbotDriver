@@ -45,14 +45,13 @@ async def main(zbot):
         car.steer_center()
         await asyncio.sleep_ms(300)
 
-        car.enable_imu_reference(True, reset_reference=True)
-        car.drive(DRIVE_POWER, CENTER_ANGLE)
+        car.start_straight(DRIVE_POWER)
 
         start_ms = time.ticks_ms()
         last_progress_ms = start_ms
         last_traveled_m = 0.0
         while True:
-            car.update()
+            car.drive_straight(DRIVE_POWER)
             dist = zbot.imu_distance()
             traveled_m = float(dist.get("distance_m", 0.0))
 

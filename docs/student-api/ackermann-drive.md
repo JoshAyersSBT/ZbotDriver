@@ -42,6 +42,8 @@ Ackermann drive methods:
 - `forward(power)`: drive forward
 - `backward(power)`: drive backward
 - `drive(throttle, steering_angle)`: set drive power and steering angle
+- `start_straight(throttle)`: center steering, reset the IMU heading reference, and begin straight driving
+- `drive_straight(throttle)`: keep driving straight with IMU heading hold
 - `steer(angle)`: set the steering angle
 - `steer_center()`: move steering to the configured center angle
 - `stop()`: stop the drive motor
@@ -57,17 +59,18 @@ async def main(zbot):
 
     try:
         # Heading reference is captured when straight-line driving starts.
-        car.forward(40)
+        car.start_straight(40)
 
         while True:
-            # update() must run often so the helper can read IMU snapshots and
-            # make small steering corrections.
-            car.update()
+            # Reapply the centered command often. The helper keeps the servo
+            # correction separate from the commanded straight-ahead angle.
+            car.drive_straight(40)
             await asyncio.sleep_ms(20)
 
     finally:
         car.stop()
 ```
 
-Call `update()` regularly when `imu_ref=True` so the drive helper can refresh
-the heading estimate.
+When using straight-line heading hold, call `drive_straight()` regularly from
+the driving loop. `update()` is still available when you want to refresh IMU
+correction without re-commanding motor power.
