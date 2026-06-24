@@ -12,14 +12,13 @@ async def main(zbot):
 
     DRIVE_POWER = 35
     TURN_POWER = 30
+    CALIBRATED_SPEED_MPS = 0.35
     FORWARD_DISTANCE_M = 6 * FEET_TO_METERS
     RIGHT_TURN_DEG = 90
 
     LOOP_MS = 20
     GYRO_DEADBAND_DPS = 1.0
     MAX_FORWARD_MS = 12000
-    IMU_PROGRESS_TIMEOUT_MS = 1500
-    IMU_PROGRESS_EPSILON_M = 0.01
     MAX_TURN_MS = 6000
 
     car = AckermannDrive(
@@ -41,48 +40,20 @@ async def main(zbot):
         return float(gz)
 
     async def drive_forward_distance(distance_m):
-        zbot.reset_imu_distance()
-        car.steer_center()
-        await asyncio.sleep_ms(300)
-
-        car.start_straight(DRIVE_POWER)
-
-        start_ms = time.ticks_ms()
-        last_progress_ms = start_ms
-        last_traveled_m = 0.0
-        while True:
-            car.drive_straight(DRIVE_POWER)
-            dist = zbot.imu_distance()
-            traveled_m = float(dist.get("distance_m", 0.0))
-
-            zbot.display(
-                "Forward",
-                "{:.2f}/{:.2f} m".format(traveled_m, distance_m),
-                "IMU hold",
-            )
-
-            if traveled_m >= distance_m:
-                break
-
-            now_ms = time.ticks_ms()
-            if traveled_m > last_traveled_m + IMU_PROGRESS_EPSILON_M:
-                last_traveled_m = traveled_m
-                last_progress_ms = now_ms
-
-            if time.ticks_diff(now_ms, last_progress_ms) >= IMU_PROGRESS_TIMEOUT_MS:
-                zbot.display("Forward", "IMU timeout", "{:.2f} m".format(traveled_m))
-                break
-
-            elapsed_ms = time.ticks_diff(now_ms, start_ms)
-            if elapsed_ms >= MAX_FORWARD_MS:
-                zbot.display("Forward", "timeout", "{:.2f} m".format(traveled_m))
-                break
-
-            await asyncio.sleep_ms(LOOP_MS)
-
-        car.stop()
-        car.steer_center()
-        return zbot.imu_distance()
+        zbot.display("Forward", "{:.2f} m".format(distance_m), "timed + IMU")
+        result = await car.drive_straight_distance(
+            distance_m,
+            throttle=DRIVE_POWER,
+            speed_mps=CALIBRATED_SPEED_MPS,
+            loop_ms=LOOP_MS,
+            max_ms=MAX_FORWARD_MS,
+        )
+        zbot.display(
+            "Forward done",
+            result.get("reason", "done"),
+            "{:.2f} m".format(result.get("timed_distance_m", 0.0)),
+        )
+        return result
 
     async def turn_right_degrees(degrees):
         car.enable_imu_reference(False)
@@ -125,7 +96,7 @@ async def main(zbot):
 
         zbot.display(
             "Done",
-            "{:.2f} m".format(forward.get("distance_m", 0.0)),
+            "{:.2f} m".format(forward.get("timed_distance_m", 0.0)),
             "{:.1f} deg".format(turned),
         )
 

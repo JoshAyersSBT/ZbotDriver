@@ -138,6 +138,39 @@ class _ZBotSensor:
     def read(self):
         return self._find_snapshot_value()
 
+    def status(self):
+        if self.api is None:
+            return {"state": "unavailable", "port": self.port}
+
+        sensors = self.api.get_sensor_snapshot()
+        item = sensors.get("port_{}_status".format(self.port))
+        if isinstance(item, dict):
+            meta = item.get("meta", {})
+            status = meta.get("status")
+            if isinstance(status, dict):
+                out = dict(status)
+                out["port"] = self.port
+                return out
+            value = item.get("value")
+            return {"state": value, "port": self.port}
+
+        item = sensors.get("port_{}_state".format(self.port))
+        if isinstance(item, dict):
+            meta = item.get("meta", {})
+            status = meta.get("status")
+            if isinstance(status, dict) and status:
+                out = dict(status)
+                out["port"] = self.port
+                return out
+            return {
+                "state": item.get("value", "unknown"),
+                "port": self.port,
+                "addrs": meta.get("addrs", []),
+                "mux_channel": meta.get("mux_channel"),
+            }
+
+        return {"state": "unknown", "port": self.port}
+
     def rgb(self):
         item = self._find_color_item()
         if item is None:
@@ -452,6 +485,10 @@ class ZBot:
     def tof(self, port):
         s = self.sensor(port)
         return s.read()
+
+    def sensor_status(self, port):
+        s = self.sensor(port)
+        return s.status()
 
     def color(self, port):
         s = self.sensor(port)

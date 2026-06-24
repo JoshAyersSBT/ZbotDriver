@@ -44,6 +44,7 @@ Ackermann drive methods:
 - `drive(throttle, steering_angle)`: set drive power and steering angle
 - `start_straight(throttle)`: center steering, reset the IMU heading reference, and begin straight driving
 - `drive_straight(throttle)`: keep driving straight with IMU heading hold
+- `drive_straight_distance(distance_m, throttle, speed_mps)`: drive a measured straight distance using calibrated time while IMU holds heading
 - `steer(angle)`: set the steering angle
 - `steer_center()`: move steering to the configured center angle
 - `stop()`: stop the drive motor
@@ -74,3 +75,33 @@ async def main(zbot):
 When using straight-line heading hold, call `drive_straight()` regularly from
 the driving loop. `update()` is still available when you want to refresh IMU
 correction without re-commanding motor power.
+
+For a measured straight run, use a calibrated speed:
+
+```python
+async def main(zbot):
+    from robot.ackermann import AckermannDrive
+
+    car = AckermannDrive(zbot, 2, 1, center_angle=90, imu_ref=True)
+
+    try:
+        result = await car.drive_straight_distance(
+            1.83,              # 6 feet in meters
+            throttle=35,
+            speed_mps=0.35,    # tune this for your robot
+        )
+
+        zbot.display(
+            "Straight done",
+            result["reason"],
+            "{:.2f} m".format(result["timed_distance_m"]),
+        )
+
+    finally:
+        car.stop()
+        car.steer_center()
+```
+
+The MPU-6050 is used for heading hold and returned telemetry, not as the
+default stopping source. Tune `speed_mps` by driving a known distance at the
+same power, measuring the real distance, and adjusting the value up or down.

@@ -268,6 +268,141 @@ class AckermannDrive:
         self.steer_center()
         return self.drive_straight(throttle, reset_reference=True)
 
+    async def drive_straight_distance(
+        self,
+        distance_m,
+        throttle=35,
+        speed_mps=None,
+        loop_ms=20,
+        max_ms=None,
+        stop_at_end=True,
+        settle_ms=250,
+        stop_on_imu=False,
+        imu_progress_timeout_ms=1500,
+        imu_progress_epsilon_m=0.01,
+    ):
+        """
+        Drive a straight distance using time-at-speed as the primary stop.
+
+        The MPU-6050 is used for heading hold and telemetry. It can optionally
+        stop the run early, but the default is to trust calibrated time because
+        accelerometer-only displacement drifts quickly.
+        """
+        import uasyncio as asyncio
+
+        target_m = abs(float(distance_m))
+        power = self._clamp_power(throttle)
+        if target_m <= 0.0 or power == 0:
+            self.stop()
+            return {
+                "status": "skipped",
+                "reason": "zero_distance_or_power",
+                "target_m": target_m,
+                "elapsed_ms": 0,
+                "timed_distance_m": 0.0,
+                "imu_distance_m": None,
+            }
+
+        if speed_mps is None:
+            # First-pass tuning model: power 40 is roughly 0.4 m/s.
+            speed_mps = 0.01 * abs(power)
+        speed_mps = abs(float(speed_mps))
+        if speed_mps <= 0.0:
+            raise ValueError("speed_mps must be greater than 0")
+
+        planned_ms = int((target_m / speed_mps) * 1000)
+        if max_ms is None:
+            max_ms = planned_ms + max(750, int(planned_ms * 0.35))
+        else:
+            max_ms = int(max_ms)
+
+        if hasattr(self.zbot, "reset_imu_distance"):
+            try:
+                self.zbot.reset_imu_distance()
+            except Exception:
+                pass
+
+        self.steer_center()
+        if settle_ms:
+            await asyncio.sleep_ms(int(settle_ms))
+
+        start_ms = self._ticks_ms()
+        last_progress_ms = start_ms
+        last_imu_distance_m = 0.0
+        timed_distance_m = 0.0
+        imu_distance_m = None
+        imu_status = "missing"
+        reason = "target_distance"
+
+        self.start_straight(power)
+
+        try:
+            while True:
+                now_ms = self._ticks_ms()
+                elapsed_ms = self._ticks_diff_ms(now_ms, start_ms)
+                timed_distance_m = speed_mps * (elapsed_ms / 1000.0)
+
+                self.drive_straight(power)
+
+                imu_state = None
+                if hasattr(self.zbot, "imu_distance"):
+                    try:
+                        imu_state = self.zbot.imu_distance()
+                    except Exception:
+                        imu_state = None
+
+                if isinstance(imu_state, dict):
+                    imu_status = str(imu_state.get("status", "ok"))
+                    imu_distance_m = float(imu_state.get("distance_m", 0.0))
+                    if imu_distance_m > last_imu_distance_m + float(imu_progress_epsilon_m):
+                        last_imu_distance_m = imu_distance_m
+                        last_progress_ms = now_ms
+
+                if stop_on_imu and imu_distance_m is not None and imu_distance_m >= target_m:
+                    reason = "imu_distance"
+                    break
+
+                if timed_distance_m >= target_m:
+                    reason = "target_distance"
+                    break
+
+                if elapsed_ms >= max_ms:
+                    reason = "max_time"
+                    break
+
+                if (
+                    imu_distance_m is not None
+                    and imu_progress_timeout_ms is not None
+                    and self._ticks_diff_ms(now_ms, last_progress_ms) >= int(imu_progress_timeout_ms)
+                ):
+                    # Report stale IMU, but keep the time-based stop as the
+                    # primary distance source.
+                    imu_status = "stale"
+                    imu_distance_m = last_imu_distance_m
+
+                await asyncio.sleep_ms(int(loop_ms))
+
+        finally:
+            if stop_at_end:
+                self.stop()
+                self.steer_center()
+
+        elapsed_ms = self._ticks_diff_ms(self._ticks_ms(), start_ms)
+        return {
+            "status": "ok" if reason == "target_distance" else "stopped",
+            "reason": reason,
+            "target_m": target_m,
+            "speed_mps": speed_mps,
+            "throttle": power,
+            "planned_ms": planned_ms,
+            "elapsed_ms": elapsed_ms,
+            "timed_distance_m": timed_distance_m,
+            "imu_distance_m": imu_distance_m,
+            "imu_status": imu_status,
+            "heading_ref": self._target_heading_deg,
+            "heading_est": self._estimated_heading_deg,
+        }
+
     def drive(self, throttle, steering_angle=None):
         throttle = self._clamp_power(throttle)
 

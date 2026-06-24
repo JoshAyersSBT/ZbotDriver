@@ -16,7 +16,12 @@ async def main(zbot):
             distance_mm = zbot.tof(front_port)
 
             if distance_mm is None:
-                zbot.display("Front sensor", "waiting")
+                status = zbot.sensor_status(front_port)
+                zbot.display(
+                    "Front sensor",
+                    status.get("state", "waiting"),
+                    status.get("kind", ""),
+                )
 
             elif distance_mm < 200:
                 # Stop when an object is closer than 200 mm.
@@ -39,9 +44,14 @@ You can also use the sensor wrapper directly:
 ```python
 front = zbot.sensor(1)
 distance_mm = front.read()
+status = front.status()
 ```
 
 `tof()` and `sensor(port).read()` return:
 
 - an integer distance in millimeters when a distance sensor is available
 - `None` when no distance reading is available yet
+
+When `tof()` returns `None`, call `zbot.sensor_status(port)` or
+`zbot.sensor(port).status()` to see whether the port is still detecting, empty,
+unidentified, missing a driver, failing probe, or returning invalid readings.

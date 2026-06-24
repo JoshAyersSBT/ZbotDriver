@@ -248,11 +248,27 @@ class SensorHub:
         self._color = {}
         self._last_value = {}
         self._retry_div = {}
+        self._port_status = {}
         self._snapshot_cache = None
         self._snapshot_dirty = True
 
     def _mark_snapshot_dirty(self):
         self._snapshot_dirty = True
+
+    def _set_port_status(self, port, state, kind=None, detail=None):
+        item = {"state": str(state)}
+        if kind is not None:
+            item["kind"] = str(kind)
+        if detail is not None:
+            item["detail"] = str(detail)
+        self._port_status[int(port)] = item
+        self._mark_snapshot_dirty()
+
+    def _sample_get(self, sample, *keys):
+        for key in keys:
+            if isinstance(sample, dict) and key in sample:
+                return sample.get(key)
+        return None
 
     def snapshot(self):
         """
@@ -277,8 +293,19 @@ class SensorHub:
                     "port": port,
                     "mux_channel": self._channel_for_port(port),
                     "addrs": [int(a) for a in addrs] if addrs else [],
+                    "status": self._port_status.get(port, {}),
                 },
             }
+            if port in self._port_status:
+                out["port_{}_status".format(port)] = {
+                    "value": self._port_status[port].get("state", "unknown"),
+                    "meta": {
+                        "port": port,
+                        "mux_channel": self._channel_for_port(port),
+                        "addrs": [int(a) for a in addrs] if addrs else [],
+                        "status": self._port_status[port],
+                    },
+                }
 
         for (kind, port), value in self._last_value.items():
             if kind in ("VL53L1X", "VL53L0X"):
@@ -337,13 +364,17 @@ class SensorHub:
         self._select(port)
         return tuple(self.i2c.scan())
 
-    def _clear_port(self, port):
+    def _clear_port(self, port, reason=None):
         self._tof.pop(port, None)
         self._color.pop(port, None)
         self._cache_state[port] = None
         self._last_value.pop(("TCS3472", port), None)
         self._last_value.pop(("VL53L1X", port), None)
         self._last_value.pop(("VL53L0X", port), None)
+        if reason is not None:
+            self._set_port_status(port, reason)
+        else:
+            self._port_status.pop(int(port), None)
         self._mark_snapshot_dirty()
 
     def _publish_state(self, port, state, addrs):
@@ -410,6 +441,7 @@ class SensorHub:
     def _try_vl53l1x(self, port):
         if vl53l1x is None:
             self._notify("SNS_ERR {} vl53l1x driver missing".format(port))
+            self._set_port_status(port, "driver_missing", "VL53L1X")
             return False
 
         try:
@@ -425,30 +457,39 @@ class SensorHub:
             time.sleep_ms(80)
 
             sample = sensor.read_debug()
+            cand_96 = self._sample_get(sample, "cand_96", "cand96")
+            cand_9c = self._sample_get(sample, "cand_9C", "cand_9c", "cand9c")
+            cand_a0 = self._sample_get(sample, "cand_A0", "cand_a0", "canda0")
 
             self._notify(
                 "SNS_DBG {} vl53 cand96={} cand9c={} candA0={} gpio={} raw={}".format(
                     port,
-                    sample["cand_96"],
-                    sample["cand_9C"],
-                    sample["cand_A0"],
-                    sample["gpio_status"],
-                    sample["raw"],
+                    cand_96,
+                    cand_9c,
+                    cand_a0,
+                    sample.get("gpio_status"),
+                    sample.get("raw"),
                 )
             )
 
             self._tof[port] = ("VL53L1X", sensor)
-            if self._valid_tof_distance(sample["cand_96"]):
-                self._last_value[("VL53L1X", port)] = sample["cand_96"]
+            if cand_96 is not None and self._valid_tof_distance(cand_96):
+                self._last_value[("VL53L1X", port)] = int(cand_96)
+                self._set_port_status(port, "ok", "VL53L1X")
+            else:
+                self._set_port_status(port, "invalid_initial_read", "VL53L1X", cand_96)
             self._mark_snapshot_dirty()
             return True
 
         except Exception as e:
             self._notify("SNS_ERR {} vl53l1x_probe {}".format(port, e))
+            self._set_port_status(port, "probe_failed", "VL53L1X", e)
             return False
 
     def _try_vl53l0x(self, port):
         if vl53l0x is None:
+            self._notify("SNS_ERR {} vl53l0x driver missing".format(port))
+            self._set_port_status(port, "driver_missing", "VL53L0X")
             return False
 
         try:
@@ -479,20 +520,24 @@ class SensorHub:
 
             if dist is None:
                 self._notify("SNS_DBG {} vl53l0x_invalid {}".format(port, last_error))
+                self._set_port_status(port, "invalid_initial_read", "VL53L0X", last_error)
 
             self._tof[port] = ("VL53L0X", sensor)
             if dist is not None:
                 self._last_value[("VL53L0X", port)] = dist
+                self._set_port_status(port, "ok", "VL53L0X")
             self._mark_snapshot_dirty()
             self._notify("SNS_DBG {} vl53l0x {}".format(port, dist))
             return True
 
         except Exception as e:
             self._notify("SNS_DBG {} vl53l0x_probe {}".format(port, e))
+            self._set_port_status(port, "probe_failed", "VL53L0X", e)
             return False
 
     def _identify(self, port, addrs):
         if not addrs:
+            self._set_port_status(port, "empty")
             return "empty"
 
         self._notify("SNS_PROBE {} {}".format(
@@ -507,12 +552,12 @@ class SensorHub:
         l1x_model = None
         try:
             l0x_model = self._read_vl53l0x_model_id(port)
-        except Exception:
-            pass
+        except Exception as e:
+            self._notify("SNS_DBG {} vl53l0x_id {}".format(port, e))
         try:
             l1x_model = self._read_vl53l1x_model_id(port)
-        except Exception:
-            pass
+        except Exception as e:
+            self._notify("SNS_DBG {} vl53l1x_id {}".format(port, e))
 
         self._notify("SNS_DBG {} vl53_id l0x={} l1x={}".format(
             port,
@@ -534,6 +579,7 @@ class SensorHub:
         if self._try_vl53l0x(port):
             return "VL53L0X"
 
+        self._set_port_status(port, "unidentified", detail=addrs)
         return "unidentified"
 
     def _poll_tcs3472(self, port):
@@ -572,40 +618,49 @@ class SensorHub:
 
                 if not self._valid_tof_distance(dist):
                     self._notify("SNS_ERR {} {} invalid {}".format(port, kind, dist))
+                    self._last_value.pop((kind, port), None)
+                    self._set_port_status(port, "invalid_read", kind, dist)
                     return
 
             elif kind == "VL53L1X" and hasattr(sensor, "read_debug"):
                 sample = sensor.read_debug()
+                cand_96 = self._sample_get(sample, "cand_96", "cand96")
+                cand_9c = self._sample_get(sample, "cand_9C", "cand_9c", "cand9c")
+                cand_a0 = self._sample_get(sample, "cand_A0", "cand_a0", "canda0")
 
                 self._notify(
                     "SNS_TOF_DBG {} cand96={} cand9c={} candA0={} gpio={} raw={}".format(
                         port,
-                        sample["cand_96"],
-                        sample["cand_9C"],
-                        sample["cand_A0"],
-                        sample["gpio_status"],
-                        sample["raw"],
+                        cand_96,
+                        cand_9c,
+                        cand_a0,
+                        sample.get("gpio_status"),
+                        sample.get("raw"),
                     )
                 )
 
-                dist = sample["cand_96"]
+                dist = cand_96
 
-                if not self._valid_tof_distance(dist):
+                if dist is None or not self._valid_tof_distance(dist):
                     self._notify("SNS_ERR {} {} invalid {}".format(port, kind, dist))
+                    self._last_value.pop((kind, port), None)
+                    self._set_port_status(port, "invalid_read", kind, dist)
                     return
             else:
                 dist = self._read_tof_distance(sensor)
 
+            dist = int(dist)
             if self._last_value.get((kind, port)) != dist:
                 self._last_value[(kind, port)] = dist
                 self._mark_snapshot_dirty()
                 self._notify("SNS_TOF {} {}".format(port, dist))
                 self._notify("SNS {} {}".format(port, kind))
+            self._set_port_status(port, "ok", kind, dist)
 
         except Exception as e:
             error("{}_POLL_{}".format(kind, port), e)
             self._notify("SNS_ERR {} {} poll failed".format(port, kind))
-            self._clear_port(port)
+            self._clear_port(port, "{}_poll_failed".format(kind))
 
     def _poll_port(self, port):
         addrs = self._scan(port)
